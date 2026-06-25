@@ -1,0 +1,6 @@
+import "config.bon"
+
+{
+    "server": {defaults},
+    "extra": std.upper("imported!")
+}

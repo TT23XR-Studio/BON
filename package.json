@@ -1,0 +1,13 @@
+{
+  "name": "bon-monorepo",
+  "private": true,
+  "scripts": {
+    "build:ts": "pnpm --filter bon-ts build",
+    "build:ext": "cd packages/bon-vsc-ext && npm run compile",
+    "test:py": "pnpm --filter bon-py test",
+    "test:ts": "pnpm --filter bon-ts test",
+    "test:all": "pnpm run test:py && pnpm run test:ts",
+    "lint:ts": "pnpm --filter bon-ts lint",
+    "package:ext": "cd packages/bon-vsc-ext && npx vsce package"
+  }
+}

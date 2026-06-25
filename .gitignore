@@ -1,0 +1,28 @@
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary Test Files
+*.bin
+temp_*/
+test_env/
+logs/
+
+# Else
+!.github/
+!.gitignore
+
+docs/
+
+# Node Modules
+node_modules/

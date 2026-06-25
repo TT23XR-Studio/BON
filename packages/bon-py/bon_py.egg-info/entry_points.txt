@@ -1,0 +1,2 @@
+[console_scripts]
+bon = bon_py.cli:main

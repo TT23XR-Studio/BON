@@ -1,0 +1,15 @@
+[project]
+name = "bon-py"
+version = "1.0.0"
+description = "BON (Better Object Notation) parser/evaluator in Python"
+requires-python = ">=3.10"
+
+[project.scripts]
+bon = "bon_py.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

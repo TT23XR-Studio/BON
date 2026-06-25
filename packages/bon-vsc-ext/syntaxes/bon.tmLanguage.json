@@ -1,0 +1,361 @@
+{
+  "name": "BON",
+  "scopeName": "source.bon",
+  "fileTypes": ["bon"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#import" },
+    { "include": "#template-definition" },
+    { "include": "#class-definition" },
+    { "include": "#method-definition" },
+    { "include": "#anonymous-fn" },
+    { "include": "#variable-assignment" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#constant" },
+    { "include": "#keyword" },
+    { "include": "#template-reference" },
+    { "include": "#property-key" },
+    { "include": "#class-name" },
+    { "include": "#builtin" },
+    { "include": "#method-call" },
+    { "include": "#identifier" },
+    { "include": "#operator" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.bon",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.line.number-sign.bon",
+          "match": "#.*$"
+        }
+      ]
+    },
+
+    "import": {
+      "patterns": [
+        {
+          "match": "^\\s*(import)\\s+(\"[^\"]*\")\\s*(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*)?",
+          "captures": {
+            "1": { "name": "keyword.control.import.bon" },
+            "2": { "name": "string.quoted.double.bon" },
+            "3": { "name": "keyword.control.as.bon" },
+            "4": { "name": "entity.name.namespace.bon" }
+          }
+        },
+        {
+          "match": "^\\s*(import)\\s+(\"[^\"]*\")",
+          "captures": {
+            "1": { "name": "keyword.control.import.bon" },
+            "2": { "name": "string.quoted.double.bon" }
+          }
+        }
+      ]
+    },
+
+    "template-definition": {
+      "patterns": [
+        {
+          "match": "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*(-)\\s*(\\{)",
+          "captures": {
+            "1": { "name": "entity.name.tag.template.bon" },
+            "2": { "name": "keyword.operator.template-def.bon" },
+            "3": { "name": "punctuation.section.template.begin.bon" }
+          }
+        }
+      ]
+    },
+
+    "class-definition": {
+      "patterns": [
+        {
+          "match": "^\\s*(class)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(extends)\\s+([a-zA-Z_][a-zA-Z0-9_]*)?",
+          "captures": {
+            "1": { "name": "keyword.control.class.bon" },
+            "2": { "name": "entity.name.type.class.bon" },
+            "3": { "name": "keyword.control.extends.bon" },
+            "4": { "name": "entity.other.inherited-class.bon" }
+          }
+        },
+        {
+          "match": "^\\s*(class)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.control.class.bon" },
+            "2": { "name": "entity.name.type.class.bon" }
+          }
+        }
+      ]
+    },
+
+    "method-definition": {
+      "patterns": [
+        {
+          "match": "(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(\\()([^)]*)?(\\))",
+          "captures": {
+            "1": { "name": "keyword.control.fn.bon" },
+            "2": { "name": "entity.name.function.bon" },
+            "3": { "name": "punctuation.definition.parameters.begin.bon" },
+            "4": { "patterns": [{ "include": "#parameter" }] },
+            "5": { "name": "punctuation.definition.parameters.end.bon" }
+          }
+        }
+      ]
+    },
+
+    "anonymous-fn": {
+      "patterns": [
+        {
+          "match": "\\b(fn)\\s*(\\()([^)]*)?(\\))\\s*(\\{)",
+          "captures": {
+            "1": { "name": "keyword.control.fn.bon" },
+            "2": { "name": "punctuation.definition.parameters.begin.bon" },
+            "3": { "patterns": [{ "include": "#parameter" }] },
+            "4": { "name": "punctuation.definition.parameters.end.bon" },
+            "5": { "name": "punctuation.section.block.begin.bon" }
+          }
+        }
+      ]
+    },
+
+    "parameter": {
+      "patterns": [
+        {
+          "name": "variable.parameter.bon",
+          "match": "[a-zA-Z_][a-zA-Z0-9_]*"
+        }
+      ]
+    },
+
+    "variable-assignment": {
+      "patterns": [
+        {
+          "match": "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*(=)",
+          "captures": {
+            "1": { "name": "variable.other.bon" },
+            "2": { "name": "keyword.operator.assignment.bon" }
+          }
+        }
+      ]
+    },
+
+    "string": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.bon",
+          "begin": "\"",
+          "end": "\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.bon" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.bon" }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.bon",
+              "match": "\\\\(?:[\"\\\\/bfnrt]|u[0-9a-fA-F]{4})"
+            }
+          ]
+        }
+      ]
+    },
+
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.bon",
+          "match": "-?\\d+\\.\\d+([eE][+-]?\\d+)?"
+        },
+        {
+          "name": "constant.numeric.integer.bon",
+          "match": "-?\\d+([eE][+-]?\\d+)?"
+        }
+      ]
+    },
+
+    "constant": {
+      "patterns": [
+        {
+          "name": "constant.language.true.bon",
+          "match": "\\b(true)\\b"
+        },
+        {
+          "name": "constant.language.false.bon",
+          "match": "\\b(false)\\b"
+        },
+        {
+          "name": "constant.language.null.bon",
+          "match": "\\b(null)\\b"
+        },
+        {
+          "match": "\\b(self)\\b(\\.)\\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "variable.language.self.bon" },
+            "2": { "name": "punctuation.accessor.bon" },
+            "3": { "name": "variable.other.property.bon" }
+          }
+        },
+        {
+          "name": "variable.language.self.bon",
+          "match": "\\b(self)\\b"
+        }
+      ]
+    },
+
+    "keyword": {
+      "patterns": [
+        {
+          "name": "keyword.control.return.bon",
+          "match": "\\b(return)\\b"
+        }
+      ]
+    },
+
+    "builtin": {
+      "patterns": [
+        {
+          "match": "\\b(std)\\b(\\.)\\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "variable.language.bon" },
+            "2": { "name": "punctuation.accessor.bon" },
+            "3": { "name": "entity.name.function.bon" }
+          }
+        },
+        {
+          "name": "variable.language.bon",
+          "match": "\\b(std)\\b"
+        }
+      ]
+    },
+
+    "identifier": {
+      "patterns": [
+        {
+          "name": "variable.other.bon",
+          "match": "\\b([a-z][a-zA-Z0-9_]*)\\b"
+        }
+      ]
+    },
+
+    "template-reference": {
+      "patterns": [
+        {
+          "match": "\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}",
+          "captures": {
+            "0": { "name": "variable.other.template.bon" },
+            "1": { "name": "entity.name.tag.template.bon" }
+          }
+        }
+      ]
+    },
+
+    "property-key": {
+      "patterns": [
+        {
+          "match": "\"([a-zA-Z_][a-zA-Z0-9_]*)\"\\s*:",
+          "captures": {
+            "0": { "name": "meta.object-literal.key.bon" },
+            "1": { "name": "support.type.property-name.bon" }
+          }
+        },
+        {
+          "match": "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*:",
+          "captures": {
+            "1": { "name": "support.type.property-name.bon" }
+          }
+        }
+      ]
+    },
+
+    "class-name": {
+      "patterns": [
+        {
+          "match": "\\b([A-Z][a-zA-Z0-9_]*)\\s*(\\{)",
+          "captures": {
+            "1": { "name": "entity.name.type.class.bon" },
+            "2": { "name": "punctuation.section.block.begin.bon" }
+          }
+        }
+      ]
+    },
+
+    "method-call": {
+      "patterns": [
+        {
+          "match": "\\.([a-zA-Z_][a-zA-Z0-9_]*)\\s*(\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.bon" },
+            "2": { "name": "punctuation.definition.parameters.begin.bon" }
+          }
+        }
+      ]
+    },
+
+    "operator": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.bon",
+          "match": "(?:==|!=|>=|<=|>|<)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.bon",
+          "match": "[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.assignment.bon",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.template-def.bon",
+          "match": "-"
+        }
+      ]
+    },
+
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.block.begin.bon",
+          "match": "\\{"
+        },
+        {
+          "name": "punctuation.section.block.end.bon",
+          "match": "\\}"
+        },
+        {
+          "name": "punctuation.section.array.begin.bon",
+          "match": "\\["
+        },
+        {
+          "name": "punctuation.section.array.end.bon",
+          "match": "\\]"
+        },
+        {
+          "name": "meta.parameters.begin.bon",
+          "match": "\\("
+        },
+        {
+          "name": "meta.parameters.end.bon",
+          "match": "\\)"
+        },
+        {
+          "name": "punctuation.separator.key-value.bon",
+          "match": "(?<=\\S)\\s*:\\s*(?=\\S)"
+        },
+        {
+          "name": "punctuation.separator.comma.bon",
+          "match": ","
+        },
+        {
+          "name": "punctuation.accessor.bon",
+          "match": "\\."
+        }
+      ]
+    }
+  }
+}

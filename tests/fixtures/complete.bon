@@ -1,0 +1,112 @@
+# ── Comments ────────────────────────────────────────────────
+
+# This is a comment
+{ "key": "value" } // This is also a comment
+
+# ── Template ────────────────────────────────────────────────
+
+base_cpu-{"cpu": "250m"}
+base_mem-{"memory": "512Mi"}
+
+{
+    "resources": {base_cpu},
+    "resources2": {base_mem}
+}
+
+# ── Class ───────────────────────────────────────────────────
+
+class Person {
+    "name": "Anonymous",
+    "age": 0,
+    "birth_year": 2000,
+
+    fn calculate_age(current_year) {
+        return current_year - self.birth_year
+    },
+
+    fn description() {
+        return self.name + " is " + std.to_string(self.age) + " years old."
+    }
+}
+
+# ── Inheritance ─────────────────────────────────────────────
+
+class Animal {
+    "type": "unknown",
+    fn move() { return "moving" }
+}
+
+class Dog extends Animal {
+    "type": "canine",
+    "breed": "mixed",
+    fn bark() { return "woof!" }
+}
+
+# ── Computed properties ─────────────────────────────────────
+
+class Rectangle {
+    "width": 10,
+    "height": 5,
+    "area": self.width * self.height,
+    "perimeter": (self.width + self.height) * 2
+}
+
+# ── Standard library ────────────────────────────────────────
+
+{
+    # JSON compatible
+    "json_obj": { "a": 1, "b": [1, 2, 3] },
+
+    # Template expansion
+    "t1": {base_cpu},
+    "t2": {base_mem},
+
+    # Class instantiation
+    "person": Person { "name": "Alice", "birth_year": 1990 },
+    "admin_age": Person { "birth_year": 1990 }.calculate_age(2026),
+
+    # Inheritance
+    "pet": Dog { "breed": "Golden Retriever" },
+
+    # Computed properties
+    "rect": Rectangle { "width": 7, "height": 7 },
+
+    # std functions
+    "upper": std.upper("hello"),
+    "lower": std.lower("WORLD"),
+    "trim": std.trim("  spaces  "),
+    "split": std.split("a,b,c", ","),
+    "replace": std.replace("foo bar", "bar", "baz"),
+    "len_str": std.len("hello"),
+    "len_arr": std.len([1, 2, 3]),
+    "at": std.at([10, 20, 30], -1),
+    "first": std.first([5, 6]),
+    "last": std.last([5, 6]),
+    "map": std.map([1, 2], fn(x) { return x * 2 }),
+    "filter": std.filter([1, 2, 3], fn(x) { return x > 1 }),
+    "reduce": std.reduce([1, 2, 3], 0, fn(a, b) { return a + b }),
+    "concat": std.concat([1], [2]),
+    "merge": std.merge({"a": 1}, {"b": 2}),
+    "keys": std.keys({"a": 1, "b": 2}),
+    "values": std.values({"a": 1, "b": 2}),
+    "to_string": std.to_string(123),
+    "to_number": std.to_number("42.5"),
+    "type_of": std.type_of([1]),
+
+    # Binary operations
+    "add": 1 + 2,
+    "sub": 10 - 3,
+    "mul": 4 * 5,
+    "div": 10 / 2,
+    "mod": 10 % 3,
+    "str_concat": "hello" + " " + "world",
+
+    # Unary
+    "neg": -5,
+
+    # Arrays
+    "arr": [1, "two", true, null],
+
+    # Nested objects
+    "nested": { "a": { "b": { "c": 42 } } }
+}

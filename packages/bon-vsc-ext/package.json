@@ -1,0 +1,96 @@
+{
+  "name": "bon-language",
+  "displayName": "BON (Better Object Notation)",
+  "description": "Syntax highlighting, language support, and built-in library completions for BON files",
+  "version": "1.0.0",
+  "publisher": "bon-lang",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "bon",
+    "json",
+    "configuration",
+    "data",
+    "syntax"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "bon",
+        "aliases": [
+          "BON",
+          "bon"
+        ],
+        "extensions": [
+          ".bon"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "dark": "./icons/file-dark.svg",
+          "light": "./icons/file-light.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "bon",
+        "scopeName": "source.bon",
+        "path": "./syntaxes/bon.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "bon",
+        "label": "BON Template",
+        "description": "Template definition",
+        "body": "${1:name}-{${2:value}}"
+      },
+      {
+        "language": "bon",
+        "label": "BON Class",
+        "description": "Class definition",
+        "body": "class ${1:Name} {\n\t\"${2:key}\": ${3:value},\n\n\tfn ${4:method}(${5:params}) {\n\t\treturn ${6:expr}\n\t}\n}"
+      },
+      {
+        "language": "bon",
+        "label": "BON Anonymous Function",
+        "description": "Anonymous function",
+        "body": "fn(${1:args}) { return ${2:expr} }"
+      },
+      {
+        "language": "bon",
+        "label": "BON Import",
+        "description": "Import statement",
+        "body": "import \"${1:path}\" as ${2:Alias}"
+      }
+    ],
+    "configuration": {
+      "title": "BON",
+      "properties": {
+        "bon.enableCompletion": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable built-in std library completions"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^6.0.3"
+  }
+}

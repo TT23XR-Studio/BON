@@ -1,0 +1,15 @@
+{
+  "iconDefinitions": [
+    {
+      "id": "file-bon",
+      "icon": "file.svg",
+      "size": 16,
+      "theme": true
+    }
+  ],
+  "fileExtensions": {
+    "bon": "file-bon"
+  },
+  "fileNames": {},
+  "languageIds": ["bon"]
+}
