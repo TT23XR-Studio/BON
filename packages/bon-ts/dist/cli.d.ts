@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * BON CLI - Command-line interface for BON parser/evaluator.
  */

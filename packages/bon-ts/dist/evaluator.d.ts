@@ -9,17 +9,20 @@ export declare class EvalError extends Error {
 }
 export declare class Evaluator {
     private baseDir;
+    private params;
     private templates;
     private classes;
     private variables;
     private importStack;
     private callFn;
-    constructor(baseDir?: string);
+    MAX_ITERATIONS: number;
+    constructor(baseDir?: string, params?: Record<string, unknown>);
     private createFnCaller;
     private callAnonymousFunc;
     evaluate(program: Program): unknown;
     eval(node: unknown): unknown;
     private resolveIdentifier;
+    private resolveParam;
     private expandTemplate;
     private instantiateClass;
     private resolveClassHierarchy;
@@ -31,10 +34,13 @@ export declare class Evaluator {
     private evalBinaryOp;
     private evalUnaryOp;
     private evalPropertyAccess;
+    private evalIfExpr;
+    private evalForLoop;
     private resolveImport;
+    sanitize(obj: unknown): unknown;
 }
 export declare function parse(source: string, filename?: string): Program;
-export declare function evaluate(source: string, baseDir?: string): unknown;
-export declare function loads(source: string, baseDir?: string): unknown;
-export declare function load(filepath: string): unknown;
+export declare function evaluate(source: string, baseDir?: string, params?: Record<string, unknown>): unknown;
+export declare function loads(source: string, baseDir?: string, params?: Record<string, unknown>): unknown;
+export declare function load(filepath: string, params?: Record<string, unknown>): unknown;
 //# sourceMappingURL=evaluator.d.ts.map

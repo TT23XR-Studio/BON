@@ -210,6 +210,10 @@ export class Parser {
             const operand = this.parseUnary();
             return { kind: "UnaryOp", op: "-", operand, pos };
         }
+        // if expression has lower precedence than unary
+        if (this.current().type === "IF") {
+            return this.parseIfExpr();
+        }
         return this.parsePostfix();
     }
     parsePostfix() {
@@ -249,6 +253,11 @@ export class Parser {
             this.advance();
             return { kind: "TemplateRef", name: tok.value, pos };
         }
+        // Parameter reference
+        if (tok.type === "PARAM") {
+            this.advance();
+            return { kind: "Param", name: tok.value, pos };
+        }
         // String literal
         if (tok.type === "STRING") {
             this.advance();
@@ -276,12 +285,20 @@ export class Parser {
         if (tok.type === "FN") {
             return this.parseAnonymousFn();
         }
+        // for expression
+        if (tok.type === "FOR") {
+            return this.parseForLoop();
+        }
         // Identifier or class instantiation
         if (tok.type === "IDENT") {
             this.advance();
             // Class instantiation: ClassName { ... }
             if (this.current().type === "LBRACE") {
                 return this.parseClassInstantiation(tok.value, pos);
+            }
+            // Function call: name(args)
+            if (this.current().type === "LPAREN") {
+                return this.parseFuncCallName(tok.value, pos);
             }
             return { kind: "Identifier", name: tok.value, pos };
         }
@@ -301,6 +318,39 @@ export class Parser {
             return expr;
         }
         throw new ParseError(`Unexpected token: ${tok.type} (${JSON.stringify(tok.value)})`, tok);
+    }
+    parseIfExpr() {
+        const pos = this.pos_();
+        this.expect("IF");
+        const cond = this.parseExpression();
+        this.expect("LBRACE");
+        const thenExpr = this.parseExpression();
+        this.expect("RBRACE");
+        let elseExpr = null;
+        const elseTok = this.match("ELSE");
+        if (elseTok) {
+            if (this.current().type === "IF") {
+                // else if chain
+                elseExpr = this.parseIfExpr();
+            }
+            else {
+                this.expect("LBRACE");
+                elseExpr = this.parseExpression();
+                this.expect("RBRACE");
+            }
+        }
+        return { kind: "IfExpr", cond, thenExpr, elseExpr, pos };
+    }
+    parseForLoop() {
+        const pos = this.pos_();
+        this.expect("FOR");
+        const varName = this.expect("IDENT").value;
+        this.expect("IN");
+        const iterable = this.parseExpression();
+        this.expect("LBRACE");
+        const body = this.parseExpression();
+        this.expect("RBRACE");
+        return { kind: "ForLoop", varName, iterable, body, pos };
     }
     parseAnonymousFn() {
         const pos = this.pos_();
@@ -348,10 +398,16 @@ export class Parser {
         return { kind: "ArrayLit", elements, pos };
     }
     parseObjectKey() {
-        if (this.current().type === "STRING") {
-            const val = this.current().value;
+        const tok = this.current();
+        if (tok.type === "STRING") {
             this.advance();
-            return val;
+            return tok.value;
+        }
+        if (tok.type === "PARAM") {
+            // $param as object key - return marker for later resolution
+            const paramName = tok.value;
+            this.advance();
+            return `__param_key__${paramName}`;
         }
         return this.expect("IDENT").value;
     }
@@ -391,9 +447,23 @@ export class Parser {
         this.expect("RBRACE");
         return { kind: "ObjectLit", pairs, pos };
     }
+    parseFuncCallName(name, pos) {
+        this.expect("LPAREN");
+        const args = [];
+        if (this.current().type !== "RPAREN") {
+            args.push(this.parseExpression());
+            while (this.match("COMMA")) {
+                if (this.current().type === "RPAREN")
+                    break;
+                args.push(this.parseExpression());
+            }
+        }
+        this.expect("RPAREN");
+        return { kind: "FuncCall", name, args, pos };
+    }
 }
-export function parse(source, _filename = "<stdin>") {
-    const lexer = new Lexer(source, _filename);
+export function parse(source, filename = "<stdin>") {
+    const lexer = new Lexer(source, filename);
     const tokens = lexer.tokens();
     const parser = new Parser(tokens);
     return parser.parse();

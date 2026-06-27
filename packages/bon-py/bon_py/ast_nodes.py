@@ -139,6 +139,28 @@ class VariableAssign:
     pos: Position = field(default_factory=lambda: Position(0, 0))
 
 
+@dataclass
+class Param:
+    name: str
+    pos: Position = field(default_factory=lambda: Position(0, 0))
+
+
+@dataclass
+class IfExpr:
+    cond: Any
+    then_expr: Any
+    else_expr: Any | None
+    pos: Position = field(default_factory=lambda: Position(0, 0))
+
+
+@dataclass
+class ForLoop:
+    var_name: str
+    iterable: Any
+    body: Any
+    pos: Position = field(default_factory=lambda: Position(0, 0))
+
+
 # ── Top-level ────────────────────────────────────────────────
 
 @dataclass
@@ -154,5 +176,5 @@ class Program:
 Expression = (
     Literal | Identifier | TemplateRef | ClassInstance | MethodCall |
     BinaryOp | UnaryOp | PropertyAccess | FuncCall | FuncDef |
-    ArrayLit | ObjectLit | ReturnStmt
+    ArrayLit | ObjectLit | ReturnStmt | Param | IfExpr | ForLoop
 )

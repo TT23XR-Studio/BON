@@ -1,6 +1,7 @@
 /**
  * Comprehensive tests for BON TypeScript implementation.
  */
+/// <reference types="node" />
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -412,5 +413,80 @@ describe("End-to-End", () => {
       expect(mainResult.map).toEqual([2, 4]);
       expect(mainResult.admin_age).toBe(36);
     }
+  });
+});
+
+// ── Params Tests ────────────────────────────────────────
+
+describe("Params", () => {
+  it("param basic", () => {
+    expect(evaluate('{"env": $env}', ".", { env: "test" })).toEqual({ env: "test" });
+  });
+
+  it("param number", () => {
+    const result = evaluate('{"value": $num}', ".", { num: 42 }) as any;
+    expect(result.value).toBe(42);
+  });
+
+  it("param in expression", () => {
+    const result = evaluate('{"doubled": $x + $x}', ".", { x: 5 }) as any;
+    expect(result.doubled).toBe(10);
+  });
+
+  it("param missing", () => {
+    expect(() => evaluate('{"x": $missing}')).toThrow(EvalError);
+  });
+});
+
+// ── If Expression Tests ────────────────────────────────────────
+
+describe("If Expression", () => {
+  it("if basic", () => {
+    const result = evaluate('if (true) { "yes" } else { "no" }');
+    expect(result).toBe("yes");
+  });
+
+  it("if false", () => {
+    const result = evaluate('if (false) { "yes" } else { "no" }');
+    expect(result).toBe("no");
+  });
+
+  it("if no else", () => {
+    const result = evaluate('if (false) { "yes" }');
+    expect(result).toBe(null);
+  });
+
+  it("if with comparison", () => {
+    const result = evaluate('if (5 > 3) { "greater" } else { "not greater" }') as any;
+    expect(result).toBe("greater");
+  });
+
+  it("if else if", () => {
+    const result = evaluate('if (false) { "a" } else { if (true) { "b" } else { "c" } }') as any;
+    expect(result).toBe("b");
+  });
+});
+
+// ── For Loop Tests ────────────────────────────────────────
+
+describe("For Loop", () => {
+  it("for array", () => {
+    const result = evaluate('for x in [1, 2, 3] { x * 2 }') as any;
+    expect(result).toEqual([2, 4, 6]);
+  });
+
+  it("for empty array", () => {
+    const result = evaluate('for x in [] { x }');
+    expect(result).toEqual([]);
+  });
+
+  it("for object", () => {
+    const result = evaluate('for v in {"a": 1, "b": 2} { v }') as any;
+    expect(result.sort()).toEqual([1, 2]);
+  });
+
+  it("for in object literal", () => {
+    const result = evaluate('{"outputs": for x in [1, 2, 3, 4, 5] { if (x > 3) { x } else { 10 - x } }}') as any;
+    expect(result.outputs).toEqual([9, 8, 7, 4, 5]);
   });
 });

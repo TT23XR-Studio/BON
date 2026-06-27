@@ -5,8 +5,8 @@ from __future__ import annotations
 from .ast_nodes import (
     ArrayLit, BinaryOp, ClassDef, ClassInstance, Expression, FuncCall,
     FuncDef, Identifier, ImportStmt, Literal, MethodCall, MethodDef,
-    ObjectLit, Position, Program, PropertyAccess, ReturnStmt, TemplateDef,
-    TemplateRef, UnaryOp, VariableAssign,
+    ObjectLit, Param, Position, Program, PropertyAccess, ReturnStmt, TemplateDef,
+    TemplateRef, UnaryOp, VariableAssign, IfExpr, ForLoop,
 )
 from .lexer import Lexer, Token, TokenType
 
@@ -55,11 +55,16 @@ class Parser:
         return Position(tok.line, tok.column)
 
     def _parse_obj_key(self) -> str:
-        """Parse an object key (ident or string)."""
+        """Parse an object key (ident, string, or $param)."""
         tok = self._current()
         if tok.type == TokenType.STRING:
             self._advance()
             return str(tok.value)
+        if tok.type == TokenType.PARAM:
+            # $param as object key - return marker for later resolution
+            param_name = str(tok.value)
+            self._advance()
+            return f"__param_key__{param_name}"
         return self._expect(TokenType.IDENT).value
 
     # ── Top-level ────────────────────────────────────────────
@@ -208,7 +213,7 @@ class Parser:
         value = self._parse_expression()
         return VariableAssign(name, value, pos)
 
-    # ── Expressions ──────────────────────────────────────────
+    # ── Expressions ─────────────────────────────────────────────
 
     def _parse_expression(self) -> Expression:
         return self._parse_comparison()
@@ -246,6 +251,9 @@ class Parser:
             self._advance()
             operand = self._parse_unary()
             return UnaryOp("-", operand, pos)
+        # if expression has lower precedence than unary
+        if self._current().type == TokenType.IF:
+            return self._parse_if_expr()
         return self._parse_postfix()
 
     def _parse_postfix(self) -> Expression:
@@ -282,6 +290,11 @@ class Parser:
             self._advance()
             return TemplateRef(tok.value, pos)
 
+        # Parameter reference
+        if tok.type == TokenType.PARAM:
+            self._advance()
+            return Param(tok.value, pos)
+
         # String literal
         if tok.type == TokenType.STRING:
             self._advance()
@@ -306,6 +319,10 @@ class Parser:
         # Anonymous function: fn(params) { body }
         if tok.type == TokenType.FN:
             return self._parse_anonymous_fn()
+
+        # for expression
+        if tok.type == TokenType.FOR:
+            return self._parse_for_loop()
 
         # Identifier or class instantiation
         if tok.type == TokenType.IDENT:
@@ -337,6 +354,51 @@ class Parser:
             return expr
 
         raise ParseError(f"Unexpected token: {tok.type.name} ({tok.value!r})", tok)
+
+    def _parse_if_expr(self) -> IfExpr:
+        pos = self._pos()
+        self._expect(TokenType.IF)
+        cond = self._parse_expression()
+        self._expect(TokenType.LBRACE)
+        then_expr = self._parse_expression()
+        self._expect(TokenType.RBRACE)
+
+        else_expr = None
+        if self._peek().type == TokenType.ELSE:
+            self._advance()  # consume ELSE
+            if self._peek().type == TokenType.IF:
+                self._advance()  # consume IF
+                # else if chain - parse inline since we already consumed IF
+                cond2 = self._parse_expression()
+                self._expect(TokenType.LBRACE)
+                then_expr2 = self._parse_expression()
+                self._expect(TokenType.RBRACE)
+
+                else_expr2 = None
+                if self._peek().type == TokenType.ELSE:
+                    self._advance()  # consume ELSE
+                    self._expect(TokenType.LBRACE)
+                    else_expr2 = self._parse_expression()
+                    self._expect(TokenType.RBRACE)
+
+                else_expr = IfExpr(cond2, then_expr2, else_expr2, pos)
+            else:
+                self._expect(TokenType.LBRACE)
+                else_expr = self._parse_expression()
+                self._expect(TokenType.RBRACE)
+
+        return IfExpr(cond, then_expr, else_expr, pos)
+
+    def _parse_for_loop(self) -> ForLoop:
+        pos = self._pos()
+        self._expect(TokenType.FOR)
+        var_name = self._expect(TokenType.IDENT).value
+        self._expect(TokenType.IN)
+        iterable = self._parse_expression()
+        self._expect(TokenType.LBRACE)
+        body = self._parse_expression()
+        self._expect(TokenType.RBRACE)
+        return ForLoop(var_name, iterable, body, pos)
 
     def _parse_anonymous_fn(self) -> FuncDef:
         pos = self._pos()

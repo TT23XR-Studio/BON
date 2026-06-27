@@ -374,3 +374,59 @@ class TestEndToEnd:
             assert result["upper"] == "HELLO"
             assert result["map"] == [2, 4]
             assert result["admin_age"] == 36
+
+
+# ── Params ───────────────────────────────────────────────────────
+
+class TestParams:
+    def test_param_basic(self):
+        result = evaluate('{"env": $env}', params={"env": "prod"})
+        assert result["env"] == "prod"
+    def test_param_number(self):
+        result = evaluate('{"replicas": $replicas}', params={"replicas": 5})
+        assert result["replicas"] == 5
+    def test_param_in_expression(self):
+        result = evaluate('std.to_string($count)', params={"count": 42})
+        assert result == "42"
+    def test_param_missing(self):
+        with pytest.raises(EvalError, match="E009"):
+            evaluate('{"env": $missing}')
+
+# ── If Expression ─────────────────────────────────────────────────
+
+class TestIfExpr:
+    def test_if_basic(self):
+        result = evaluate('if (true) { "yes" } else { "no" }')
+        assert result == "yes"
+
+    def test_if_false(self):
+        result = evaluate('if (false) { "yes" } else { "no" }')
+        assert result == "no"
+
+    def test_if_no_else(self):
+        result = evaluate('if (false) { "yes" }')
+        assert result is None
+
+    def test_if_with_comparison(self):
+        result = evaluate('if (1 > 2) { "big" } else { "small" }')
+        assert result == "small"
+
+    def test_if_else_if(self):
+        result = evaluate('if (false) { "a" } else if (true) { "b" } else { "c" }')
+        assert result == "b"
+
+
+# ── For Loop ─────────────────────────────────────────────────────
+
+class TestForLoop:
+    def test_for_array(self):
+        result = evaluate('{"outputs": for x in [1, 2, 3] { x * 2 }}')
+        assert result["outputs"] == [2, 4, 6]
+
+    def test_for_empty_array(self):
+        result = evaluate('{"outputs": for x in [] { x }}')
+        assert result["outputs"] == []
+
+    def test_for_object(self):
+        result = evaluate('{"outputs": for v in {"a": 1, "b": 2} { v }}')
+        assert sorted(result["outputs"]) == [1, 2]

@@ -24,6 +24,10 @@ class TokenType(Enum):
     RETURN = auto()
     IMPORT = auto()
     AS = auto()
+    IF = auto()
+    ELSE = auto()
+    FOR = auto()
+    IN = auto()
 
     # Punctuation
     LBRACE = auto()      # {
@@ -53,6 +57,7 @@ class TokenType(Enum):
 
     # Special
     TEMPLATE_OPEN = auto()   # {template_name}
+    PARAM = auto()          # $xxx for compile-time parameters
     EOF = auto()
 
 
@@ -66,6 +71,10 @@ KEYWORDS: dict[str, TokenType] = {
     "true": TokenType.TRUE,
     "false": TokenType.FALSE,
     "null": TokenType.NULL,
+    "if": TokenType.IF,
+    "else": TokenType.ELSE,
+    "for": TokenType.FOR,
+    "in": TokenType.IN,
 }
 
 
@@ -193,6 +202,15 @@ class Lexer:
         value = float(num_str) if has_dot or "e" in num_str.lower() else int(num_str)
         return Token(TokenType.NUMBER, value, start_line, start_col)
 
+    def _read_param(self) -> Token:
+        """Read a compile-time parameter like $env."""
+        start_line, start_col = self.line, self.column
+        self._advance()  # consume $
+        ident = ""
+        while self.pos < len(self.source) and (self.source[self.pos].isalnum() or self.source[self.pos] == "_"):
+            ident += self._advance()
+        return Token(TokenType.PARAM, ident, start_line, start_col)
+
     def _read_identifier(self) -> Token:
         start_line, start_col = self.line, self.column
         ident = ""
@@ -207,22 +225,17 @@ class Lexer:
         if self.pos >= len(self.source) or self.source[self.pos] != "{":
             return None
 
-        # Check if this is a template reference (not a JSON object)
-        # A template reference is: {identifier} where identifier is a bare name
         saved_pos = self.pos
         saved_line = self.line
         saved_col = self.column
 
         self._advance()  # consume {
-        self._skip_whitespace()
 
+        # Template references are {name} without spaces inside
         if self.pos < len(self.source) and (self.source[self.pos].isalpha() or self.source[self.pos] == "_"):
-            ident_start = self.pos
             ident = ""
             while self.pos < len(self.source) and (self.source[self.pos].isalnum() or self.source[self.pos] == "_"):
                 ident += self._advance()
-
-            self._skip_whitespace()
 
             if self.pos < len(self.source) and self.source[self.pos] == "}":
                 self._advance()
@@ -267,6 +280,11 @@ class Lexer:
             # Identifier / keyword
             if ch.isalpha() or ch == "_":
                 result.append(self._read_identifier())
+                continue
+
+            # Parameter $var
+            if ch == "$":
+                result.append(self._read_param())
                 continue
 
             # Punctuation and operators

@@ -134,6 +134,28 @@ export interface VariableAssign {
   pos: Position;
 }
 
+export interface Param {
+  kind: "Param";
+  name: string;
+  pos: Position;
+}
+
+export interface IfExpr {
+  kind: "IfExpr";
+  cond: Expression;
+  thenExpr: Expression;
+  elseExpr: Expression | null;
+  pos: Position;
+}
+
+export interface ForLoop {
+  kind: "ForLoop";
+  varName: string;
+  iterable: Expression;
+  body: Expression;
+  pos: Position;
+}
+
 // ── Union type ───────────────────────────────────────────────
 
 export type Expression =
@@ -149,7 +171,10 @@ export type Expression =
   | FuncDef
   | ArrayLit
   | ObjectLit
-  | ReturnStmt;
+  | ReturnStmt
+  | Param
+  | IfExpr
+  | ForLoop;
 
 export interface Program {
   imports: ImportStmt[];

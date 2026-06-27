@@ -1,5 +1,0 @@
-class Person {
-    "name": "Anonymous",
-    fn greet() { return "Hi, I'm " + self.name }
-}
-Person { "name": "Alice" }

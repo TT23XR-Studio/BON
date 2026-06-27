@@ -9,5 +9,8 @@
     "test:all": "pnpm run test:py && pnpm run test:ts",
     "lint:ts": "pnpm --filter bon-ts lint",
     "package:ext": "cd packages/bon-vsc-ext && npx vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1"
   }
 }

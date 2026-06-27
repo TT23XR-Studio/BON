@@ -117,6 +117,10 @@ class BonCompletionProvider {
             { name: "true", doc: "Boolean true" },
             { name: "false", doc: "Boolean false" },
             { name: "null", doc: "Null value" },
+            { name: "if", doc: "Conditional expression" },
+            { name: "else", doc: "Alternative branch for if" },
+            { name: "for", doc: "Loop expression" },
+            { name: "in", doc: "Part of for loop syntax" },
         ];
         return keywords.map((kw) => {
             const item = new vscode.CompletionItem(kw.name, vscode.CompletionItemKind.Keyword);
@@ -145,6 +149,21 @@ class BonCompletionProvider {
                 label: "import",
                 snippet: 'import "${1:path}" as ${2:Alias}',
                 doc: "Import statement",
+            },
+            {
+                label: "if",
+                snippet: "if (${1:cond}) { ${2:then} } else { ${3:else} }",
+                doc: "Conditional expression",
+            },
+            {
+                label: "for",
+                snippet: "for ${1:item} in ${2:iterable} { ${3:body} }",
+                doc: "Loop expression",
+            },
+            {
+                label: "param",
+                snippet: "${1:name}",
+                doc: "Insert compile-time parameter reference",
             },
         ];
         return snippets.map((s) => {
@@ -185,6 +204,10 @@ class BonHoverProvider {
             true: "**true** - Boolean true literal",
             false: "**false** - Boolean false literal",
             null: "**null** - Null value literal",
+            if: "**if** - Conditional expression (compile-time)\n\n```bon\nif (cond) { then } else { else }\n```",
+            else: "**else** - Alternative branch for if/else if",
+            for: "**for** - Loop expression (compile-time)\n\n```bon\nfor x in [1,2,3] { x * 2 }\n```",
+            in: "**in** - Part of for loop syntax",
         };
         if (text in keywords) {
             return new vscode.Hover(new vscode.MarkdownString(keywords[text]));

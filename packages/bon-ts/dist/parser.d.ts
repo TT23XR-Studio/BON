@@ -31,11 +31,14 @@ export declare class Parser {
     private parseUnary;
     private parsePostfix;
     private parsePrimary;
+    private parseIfExpr;
+    private parseForLoop;
     private parseAnonymousFn;
     private parseClassInstantiation;
     private parseArrayLiteral;
     private parseObjectKey;
     private parseObjectLiteral;
+    private parseFuncCallName;
 }
-export declare function parse(source: string, _filename?: string): Program;
+export declare function parse(source: string, filename?: string): Program;
 //# sourceMappingURL=parser.d.ts.map

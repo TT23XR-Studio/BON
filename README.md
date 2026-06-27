@@ -42,7 +42,6 @@ BON/
 │   ├── bon-ts/          # TypeScript 实现（解析器 + 求值器 + CLI）
 │   └── bon-vsc-ext/     # VS Code 扩展（语法高亮 + 图标）
 ├── tests/               # 共享测试
-├── docs/                # 文档
 └── use/                 # 使用示例
     ├── bon-py/          # Python 示例
     └── bon-ts/          # TypeScript 示例
@@ -81,16 +80,7 @@ const result = evaluate('{ "name": "BON" }');
 
 ## 文档
 
-| 文档 | 说明 |
-|------|------|
-| [docs/introduction.md](docs/introduction.md) | BON 是什么、解决了什么 |
-| [docs/getting-started.md](docs/getting-started.md) | 快速开始 |
-| [docs/spec.md](docs/spec.md) | 语言规范 |
-| [docs/stdlib.md](docs/stdlib.md) | 标准库参考 |
-| [docs/how-to-use/py.md](docs/how-to-use/py.md) | Python 库 API |
-| [docs/how-to-use/ts.md](docs/how-to-use/ts.md) | TypeScript 库 API |
-| [docs/how-to-use/pycli.md](docs/how-to-use/pycli.md) | Python CLI |
-| [docs/how-to-use/tscli.md](docs/how-to-use/tscli.md) | TypeScript CLI |
+文档使用 Vitepress 构建，在 [https://docss.sxxyrry.qzz.io/BON/](https://docss.sxxyrry.qzz.io/BON/)
 
 ## 运行测试
 
@@ -102,6 +92,6 @@ cd packages/bon-py && python -m pytest
 cd packages/bon-ts && npm test
 ```
 
-## License
+## 许可证 License
 
-MIT
+Apache v2.0

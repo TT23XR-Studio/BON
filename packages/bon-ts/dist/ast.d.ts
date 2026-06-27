@@ -112,7 +112,26 @@ export interface VariableAssign {
     value: Expression;
     pos: Position;
 }
-export type Expression = Literal | Identifier | TemplateRef | ClassInstance | MethodCall | BinaryOp | UnaryOp | PropertyAccess | FuncCall | FuncDef | ArrayLit | ObjectLit | ReturnStmt;
+export interface Param {
+    kind: "Param";
+    name: string;
+    pos: Position;
+}
+export interface IfExpr {
+    kind: "IfExpr";
+    cond: Expression;
+    thenExpr: Expression;
+    elseExpr: Expression | null;
+    pos: Position;
+}
+export interface ForLoop {
+    kind: "ForLoop";
+    varName: string;
+    iterable: Expression;
+    body: Expression;
+    pos: Position;
+}
+export type Expression = Literal | Identifier | TemplateRef | ClassInstance | MethodCall | BinaryOp | UnaryOp | PropertyAccess | FuncCall | FuncDef | ArrayLit | ObjectLit | ReturnStmt | Param | IfExpr | ForLoop;
 export interface Program {
     imports: ImportStmt[];
     templates: Record<string, TemplateDef>;

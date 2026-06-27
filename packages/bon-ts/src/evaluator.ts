@@ -18,6 +18,7 @@ import type {
   MethodCall,
   MethodDef,
   ObjectLit,
+  Param,
   Position,
   Program,
   PropertyAccess,
@@ -26,6 +27,8 @@ import type {
   TemplateRef,
   UnaryOp,
   VariableAssign,
+  IfExpr,
+  ForLoop,
 } from "./ast.js";
 import { Lexer } from "./lexer.js";
 import { Parser } from "./parser.js";
@@ -50,10 +53,9 @@ interface BonFunc {
 }
 
 interface BonMethod {
-  __method__: true;
+  __bonMethod__: true;
   def: MethodDef;
   classDef: ClassDef;
-  instance: Record<string, unknown>;
 }
 
 type FnCaller = (fn: unknown, args: unknown[]) => unknown;
@@ -65,7 +67,12 @@ export class Evaluator {
   private importStack: string[] = [];
   private callFn: FnCaller;
 
-  constructor(private baseDir: string = ".") {
+  MAX_ITERATIONS = 10000;
+
+  constructor(
+    private baseDir: string = ".",
+    private params: Record<string, unknown> = {},
+  ) {
     this.callFn = this.createFnCaller();
   }
 
@@ -121,6 +128,9 @@ export class Evaluator {
       case "Identifier":
         return this.resolveIdentifier((n as unknown as Identifier).name, (n as unknown as Identifier).pos);
 
+      case "Param":
+        return this.resolveParam((n as unknown as Param).name, (n as unknown as Param).pos);
+
       case "TemplateRef":
         return this.expandTemplate((n as unknown as TemplateRef).name, (n as unknown as TemplateRef).pos);
 
@@ -156,11 +166,28 @@ export class Evaluator {
 
       case "ObjectLit": {
         const obj: Record<string, unknown> = {};
-        for (const [key, val] of Object.entries((n as unknown as ObjectLit).pairs)) {
-          obj[key] = this.eval(val);
+        const objNode = n as unknown as ObjectLit;
+        for (const [key, val] of Object.entries(objNode.pairs)) {
+          // Handle $param keys
+          if (key.startsWith("__param_key__")) {
+            const paramName = key.slice("__param_key__".length);
+            const actualKey = this.resolveParam(paramName, objNode.pos);
+            if (typeof actualKey !== "string") {
+              throw new EvalError(`Object key from $ variable must be string, got ${typeof actualKey}`, "E011", objNode.pos);
+            }
+            obj[actualKey] = this.eval(val);
+          } else {
+            obj[key] = this.eval(val);
+          }
         }
         return obj;
       }
+
+      case "IfExpr":
+        return this.evalIfExpr(n as unknown as IfExpr);
+
+      case "ForLoop":
+        return this.evalForLoop(n as unknown as ForLoop);
 
       case "ReturnStmt":
         return this.eval((n as unknown as ReturnStmt).value);
@@ -181,6 +208,14 @@ export class Evaluator {
     if (name in this.templates) return this.templates[name];
     if (name in this.classes) return this.classes[name];
     throw new EvalError(`Undefined identifier: ${name}`, "E001", pos);
+  }
+
+  private resolveParam(name: string, pos: Position): unknown {
+    if (!(name in this.params)) {
+      const available = Object.keys(this.params).join(", ");
+      throw new EvalError(`Missing parameter: $${name}. Available: $${available}`, "E009", pos);
+    }
+    return this.params[name];
   }
 
   private expandTemplate(name: string, pos: Position): unknown {
@@ -217,9 +252,9 @@ export class Evaluator {
       }
     }
 
-    // Store methods
+    // Store methods (without instance reference to avoid cycle in JSON output)
     for (const [name, md] of Object.entries(resolvedMethods)) {
-      instance[name] = { __method__: true, def: md, classDef: cd, instance } satisfies BonMethod;
+      instance[name] = { __bonMethod__: true, def: md, classDef: cd };
     }
 
     return instance;
@@ -289,25 +324,11 @@ export class Evaluator {
 
     const obj = this.eval(node.obj);
 
-    // If obj is a dict with __method__, call the method directly
-    if (obj && typeof obj === "object" && "__method__" in obj) {
-      const m = obj as BonMethod;
-      const args = node.args.map((a) => this.eval(a));
-
-      const oldVars = { ...this.variables };
-      this.variables["self"] = m.instance;
-      try {
-        return this.evalFuncDef(m.def, args, {});
-      } finally {
-        this.variables = oldVars;
-      }
-    }
-
     // If obj is a class instance (dict), look up the method on it
     if (obj && typeof obj === "object" && !Array.isArray(obj) && node.method in obj) {
       const methodVal = (obj as Record<string, unknown>)[node.method];
-      if (methodVal && typeof methodVal === "object" && "__method__" in methodVal) {
-        const m = methodVal as BonMethod;
+      if (methodVal && typeof methodVal === "object" && "__bonMethod__" in methodVal) {
+        const m = methodVal as unknown as BonMethod;
         const args = node.args.map((a) => this.eval(a));
 
         const oldVars = { ...this.variables };
@@ -454,6 +475,51 @@ export class Evaluator {
     throw new EvalError(`Cannot access property on ${typeLabel(obj)}`, "E007", node.pos);
   }
 
+  private evalIfExpr(node: IfExpr): unknown {
+    const cond = this.eval(node.cond);
+    if (typeof cond !== "boolean") {
+      throw new EvalError(`if condition must be boolean, got ${typeof cond}`, "E011", node.pos);
+    }
+
+    if (cond) {
+      return this.eval(node.thenExpr);
+    } else if (node.elseExpr !== null) {
+      return this.eval(node.elseExpr);
+    }
+    return null;
+  }
+
+  private evalForLoop(node: ForLoop): unknown {
+    const iterable = this.eval(node.iterable);
+    if (!Array.isArray(iterable) && (iterable === null || typeof iterable !== "object")) {
+      throw new EvalError(`for loop requires iterable (array or object), got ${typeLabel(iterable)}`, "E011", node.pos);
+    }
+
+    const results: unknown[] = [];
+    if (Array.isArray(iterable)) {
+      for (const item of iterable) {
+        const oldVars = { ...this.variables };
+        this.variables[node.varName] = item;
+        try {
+          results.push(this.eval(node.body));
+        } finally {
+          this.variables = oldVars;
+        }
+      }
+    } else {
+      for (const [_key, value] of Object.entries(iterable as Record<string, unknown>)) {
+        const oldVars = { ...this.variables };
+        this.variables[node.varName] = value;
+        try {
+          results.push(this.eval(node.body));
+        } finally {
+          this.variables = oldVars;
+        }
+      }
+    }
+    return results;
+  }
+
   private resolveImport(imp: ImportStmt): void {
     const filepath = path.resolve(this.baseDir, imp.path);
 
@@ -469,7 +535,7 @@ export class Evaluator {
     const source = fs.readFileSync(filepath, "utf-8");
     this.importStack.push(filepath);
     try {
-      const imported = new Evaluator(path.dirname(filepath));
+      const imported = new Evaluator(path.dirname(filepath), this.params);
       imported.templates = { ...this.templates };
       imported.classes = { ...this.classes };
       imported.variables = { ...this.variables };
@@ -492,6 +558,26 @@ export class Evaluator {
       }
       this.variables[imp.alias] = ns;
     }
+  }
+
+  sanitize(obj: unknown): unknown {
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const rec = obj as Record<string, unknown>;
+      if ("__bonMethod__" in rec) {
+        return null;
+      }
+      const result: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rec)) {
+        if (!k.startsWith("__")) {
+          result[k] = this.sanitize(v);
+        }
+      }
+      return result;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map((item) => this.sanitize(item));
+    }
+    return obj;
   }
 }
 
@@ -522,17 +608,18 @@ export function parse(source: string, filename = "<stdin>"): Program {
   return parser.parse();
 }
 
-export function evaluate(source: string, baseDir = "."): unknown {
+export function evaluate(source: string, baseDir = ".", params: Record<string, unknown> = {}): unknown {
   const program = parse(source);
-  const evaluator = new Evaluator(baseDir);
-  return evaluator.evaluate(program);
+  const evaluator = new Evaluator(baseDir, params);
+  const result = evaluator.evaluate(program);
+  return evaluator.sanitize(result);
 }
 
-export function loads(source: string, baseDir = "."): unknown {
-  return evaluate(source, baseDir);
+export function loads(source: string, baseDir = ".", params: Record<string, unknown> = {}): unknown {
+  return evaluate(source, baseDir, params);
 }
 
-export function load(filepath: string): unknown {
+export function load(filepath: string, params: Record<string, unknown> = {}): unknown {
   const source = fs.readFileSync(filepath, "utf-8");
-  return evaluate(source, path.dirname(filepath));
+  return evaluate(source, path.dirname(filepath), params);
 }

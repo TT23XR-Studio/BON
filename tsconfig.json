@@ -1,20 +1,17 @@
 {
   "compilerOptions": {
     "target": "ESNEXT",
-    "module": "Node16",
-    "moduleResolution": "Node16",
     "lib": ["ESNEXT"],
-    "outDir": "dist",
+    "outDir": "out",
     "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "declaration": true,
-    "declarationMap": true,
     "sourceMap": true,
-    "types": ["node"],
+    "declaration": true,
+    "types": ["node"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "exclude": ["node_modules", "out"]
 }

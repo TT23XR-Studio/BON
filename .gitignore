@@ -22,7 +22,21 @@ logs/
 !.github/
 !.gitignore
 
+# Documentation
 docs/
+docs*/
+
+# AI CLI
+.kilo/
 
 # Node Modules
 node_modules/
+
+# Python Cache
+__pycache__/
+.pytest_cache/
+*.egg-info/
+
+# MarkDown File
+*.md
+!README.md

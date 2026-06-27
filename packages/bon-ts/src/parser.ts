@@ -18,6 +18,7 @@ import type {
   MethodCall,
   MethodDef,
   ObjectLit,
+  Param,
   Position,
   Program,
   PropertyAccess,
@@ -26,6 +27,8 @@ import type {
   TemplateRef,
   UnaryOp,
   VariableAssign,
+  IfExpr,
+  ForLoop,
 } from "./ast.js";
 
 export class ParseError extends Error {
@@ -281,6 +284,10 @@ export class Parser {
       const operand = this.parseUnary();
       return { kind: "UnaryOp", op: "-", operand, pos };
     }
+    // if expression has lower precedence than unary
+    if (this.current().type === "IF") {
+      return this.parseIfExpr();
+    }
     return this.parsePostfix();
   }
 
@@ -325,6 +332,12 @@ export class Parser {
       return { kind: "TemplateRef", name: tok.value as string, pos };
     }
 
+    // Parameter reference
+    if (tok.type === "PARAM") {
+      this.advance();
+      return { kind: "Param", name: tok.value as string, pos };
+    }
+
     // String literal
     if (tok.type === "STRING") {
       this.advance();
@@ -347,6 +360,11 @@ export class Parser {
       return this.parseAnonymousFn();
     }
 
+    // for expression
+    if (tok.type === "FOR") {
+      return this.parseForLoop();
+    }
+
     // Identifier or class instantiation
     if (tok.type === "IDENT") {
       this.advance();
@@ -354,6 +372,11 @@ export class Parser {
       // Class instantiation: ClassName { ... }
       if (this.current().type === "LBRACE") {
         return this.parseClassInstantiation(tok.value as string, pos);
+      }
+
+      // Function call: name(args)
+      if (this.current().type === "LPAREN") {
+        return this.parseFuncCallName(tok.value as string, pos);
       }
 
       return { kind: "Identifier", name: tok.value as string, pos };
@@ -378,6 +401,42 @@ export class Parser {
     }
 
     throw new ParseError(`Unexpected token: ${tok.type} (${JSON.stringify(tok.value)})`, tok);
+  }
+
+  private parseIfExpr(): IfExpr {
+    const pos = this.pos_();
+    this.expect("IF");
+    const cond = this.parseExpression();
+    this.expect("LBRACE");
+    const thenExpr = this.parseExpression();
+    this.expect("RBRACE");
+
+    let elseExpr: Expression | null = null;
+    const elseTok = this.match("ELSE");
+    if (elseTok) {
+      if (this.current().type === "IF") {
+        // else if chain
+        elseExpr = this.parseIfExpr();
+      } else {
+        this.expect("LBRACE");
+        elseExpr = this.parseExpression();
+        this.expect("RBRACE");
+      }
+    }
+
+    return { kind: "IfExpr", cond, thenExpr, elseExpr, pos };
+  }
+
+  private parseForLoop(): ForLoop {
+    const pos = this.pos_();
+    this.expect("FOR");
+    const varName = this.expect("IDENT").value as string;
+    this.expect("IN");
+    const iterable = this.parseExpression();
+    this.expect("LBRACE");
+    const body = this.parseExpression();
+    this.expect("RBRACE");
+    return { kind: "ForLoop", varName, iterable, body, pos };
   }
 
   private parseAnonymousFn(): FuncDef {
@@ -435,10 +494,16 @@ export class Parser {
   }
 
   private parseObjectKey(): string {
-    if (this.current().type === "STRING") {
-      const val = this.current().value as string;
+    const tok = this.current();
+    if (tok.type === "STRING") {
       this.advance();
-      return val;
+      return tok.value as string;
+    }
+    if (tok.type === "PARAM") {
+      // $param as object key - return marker for later resolution
+      const paramName = tok.value as string;
+      this.advance();
+      return `__param_key__${paramName}`;
     }
     return this.expect("IDENT").value as string;
   }
@@ -477,10 +542,26 @@ export class Parser {
     this.expect("RBRACE");
     return { kind: "ObjectLit", pairs, pos };
   }
+
+  private parseFuncCallName(name: string, pos: Position): FuncCall {
+    this.expect("LPAREN");
+    const args: Expression[] = [];
+
+    if (this.current().type !== "RPAREN") {
+      args.push(this.parseExpression());
+      while (this.match("COMMA")) {
+        if (this.current().type === "RPAREN") break;
+        args.push(this.parseExpression());
+      }
+    }
+
+    this.expect("RPAREN");
+    return { kind: "FuncCall", name, args, pos };
+  }
 }
 
-export function parse(source: string, _filename = "<stdin>"): Program {
-  const lexer = new Lexer(source, _filename);
+export function parse(source: string, filename = "<stdin>"): Program {
+  const lexer = new Lexer(source, filename);
   const tokens = lexer.tokens();
   const parser = new Parser(tokens);
   return parser.parse();

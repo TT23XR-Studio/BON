@@ -15,6 +15,7 @@
     { "include": "#constant" },
     { "include": "#keyword" },
     { "include": "#template-reference" },
+    { "include": "#param" },
     { "include": "#property-key" },
     { "include": "#class-name" },
     { "include": "#builtin" },
@@ -212,6 +213,34 @@
         {
           "name": "keyword.control.return.bon",
           "match": "\\b(return)\\b"
+        },
+        {
+          "name": "keyword.control.if.bon",
+          "match": "\\b(if)\\b"
+        },
+        {
+          "name": "keyword.control.else.bon",
+          "match": "\\b(else)\\b"
+        },
+        {
+          "name": "keyword.control.for.bon",
+          "match": "\\b(for)\\b"
+        },
+        {
+          "name": "keyword.control.in.bon",
+          "match": "\\b(in)\\b"
+        }
+      ]
+    },
+
+    "param": {
+      "patterns": [
+        {
+          "match": "\\$([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "0": { "name": "variable.parameter.compile-time.bon" },
+            "1": { "name": "entity.name.parameter.bon" }
+          }
         }
       ]
     },

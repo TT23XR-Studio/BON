@@ -11,6 +11,10 @@ const KEYWORDS = {
     true: "TRUE",
     false: "FALSE",
     null: "NULL",
+    if: "IF",
+    else: "ELSE",
+    for: "FOR",
+    in: "IN",
 };
 export class LexerError extends Error {
     line;
@@ -150,6 +154,16 @@ export class Lexer {
         const type = KEYWORDS[ident] ?? "IDENT";
         return { type, value: ident, line: startLine, column: startCol };
     }
+    readParam() {
+        const startLine = this.line;
+        const startCol = this.column;
+        this.advance(); // consume $
+        let ident = "";
+        while (this.pos < this.source.length && (this.source[this.pos].match(/[a-zA-Z0-9_]/))) {
+            ident += this.advance();
+        }
+        return { type: "PARAM", value: ident, line: startLine, column: startCol };
+    }
     checkTemplateRef() {
         if (this.pos >= this.source.length || this.source[this.pos] !== "{") {
             return null;
@@ -158,13 +172,13 @@ export class Lexer {
         const savedLine = this.line;
         const savedCol = this.column;
         this.advance(); // consume {
-        this.skipWhitespace();
+        // Template references are {name} without spaces inside
         if (this.pos < this.source.length && (this.source[this.pos].match(/[a-zA-Z_]/))) {
             let ident = "";
             while (this.pos < this.source.length && (this.source[this.pos].match(/[a-zA-Z0-9_]/))) {
                 ident += this.advance();
             }
-            this.skipWhitespace();
+            // Must be immediately followed by } - no spaces allowed
             if (this.pos < this.source.length && this.source[this.pos] === "}") {
                 this.advance();
                 return { type: "TEMPLATE_OPEN", value: ident, line: savedLine, column: savedCol };
@@ -197,6 +211,7 @@ export class Lexer {
                     result.push(tmpl);
                     continue;
                 }
+                // Not a template ref, `{` will be handled below as LBRACE
             }
             // String
             if (ch === '"') {
@@ -211,6 +226,11 @@ export class Lexer {
             // Identifier / keyword
             if ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch === "_") {
                 result.push(this.readIdentifier());
+                continue;
+            }
+            // Parameter $var
+            if (ch === "$") {
+                result.push(this.readParam());
                 continue;
             }
             // Dash

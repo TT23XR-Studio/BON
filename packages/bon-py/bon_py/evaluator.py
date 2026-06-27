@@ -10,8 +10,8 @@ from typing import Any, Callable
 from .ast_nodes import (
     ArrayLit, BinaryOp, ClassDef, ClassInstance, Expression, FuncCall,
     FuncDef, Identifier, ImportStmt, Literal, MethodCall, MethodDef,
-    ObjectLit, Position, Program, PropertyAccess, ReturnStmt, TemplateDef,
-    TemplateRef, UnaryOp, VariableAssign,
+    ObjectLit, Param, Position, Program, PropertyAccess, ReturnStmt, TemplateDef,
+    TemplateRef, UnaryOp, VariableAssign, IfExpr, ForLoop,
 )
 from .lexer import Lexer
 from .parser import Parser
@@ -29,8 +29,11 @@ class EvalError(Exception):
 class Evaluator:
     """Evaluates a BON AST into pure JSON."""
 
-    def __init__(self, base_dir: str = "."):
+    MAX_ITERATIONS = 10000
+
+    def __init__(self, base_dir: str = ".", params: dict[str, Any] | None = None):
         self.base_dir = base_dir
+        self.params = params or {}
         self.templates: dict[str, TemplateDef] = {}
         self.classes: dict[str, ClassDef] = {}
         self.variables: dict[str, Any] = {}
@@ -80,8 +83,9 @@ class Evaluator:
     def _sanitize(self, obj: Any) -> Any:
         """Remove internal BON method wrappers so output is JSON-serializable."""
         if isinstance(obj, dict):
-            if "__method__" in obj:
-                return None  # method reference, not serializable
+            # Check both __bonMethod__ (TS) and __method__ (legacy Python)
+            if "__bonMethod__" in obj or "__method__" in obj:
+                return None
             return {k: self._sanitize(v) for k, v in obj.items()
                     if not k.startswith("__")}
         if isinstance(obj, list):
@@ -95,6 +99,9 @@ class Evaluator:
 
         if isinstance(node, Identifier):
             return self._resolve_identifier(node.name, node.pos)
+
+        if isinstance(node, Param):
+            return self._resolve_param(node.name, node.pos)
 
         if isinstance(node, TemplateRef):
             return self._expand_template(node.name, node.pos)
@@ -124,6 +131,12 @@ class Evaluator:
         if isinstance(node, UnaryOp):
             return self._eval_unary_op(node)
 
+        if isinstance(node, IfExpr):
+            return self._eval_if_expr(node)
+
+        if isinstance(node, ForLoop):
+            return self._eval_for_loop(node)
+
         if isinstance(node, PropertyAccess):
             return self._eval_property_access(node)
 
@@ -133,7 +146,15 @@ class Evaluator:
         if isinstance(node, ObjectLit):
             result = {}
             for key, val in node.pairs.items():
-                result[key] = self._eval(val)
+                # Handle $param keys
+                if key.startswith("__param_key__"):
+                    param_name = key[len("__param_key__"):]
+                    actual_key = self._resolve_param(param_name, node.pos)
+                    if not isinstance(actual_key, str):
+                        raise EvalError(f"Object key from $ variable must be string, got {type(actual_key).__name__}", "E011", node.pos)
+                    result[actual_key] = self._eval(val)
+                else:
+                    result[key] = self._eval(val)
             return result
 
         if isinstance(node, ReturnStmt):
@@ -164,6 +185,54 @@ class Evaluator:
             return self.classes[name]
 
         raise EvalError(f"Undefined identifier: {name}", "E001", pos)
+
+    def _resolve_param(self, name: str, pos: Position) -> Any:
+        """Resolve a compile-time parameter."""
+        if name not in self.params:
+            available = ", ".join(sorted(self.params.keys()))
+            raise EvalError(f"Missing parameter: ${name}. Available: ${available}", "E009", pos)
+        return self.params[name]
+
+    def _eval_if_expr(self, node: IfExpr) -> Any:
+        """Evaluate if expression."""
+        cond = self._eval(node.cond)
+        if not isinstance(cond, bool):
+            raise EvalError(f"if condition must be boolean, got {type(cond).__name__}", "E011", node.pos)
+
+        if cond:
+            return self._eval(node.then_expr)
+        elif node.else_expr is not None:
+            return self._eval(node.else_expr)
+        return None
+
+    def _eval_for_loop(self, node: ForLoop) -> Any:
+        """Evaluate for loop and expand."""
+        iterable_val = self._eval(node.iterable)
+        if not isinstance(iterable_val, (list, dict)):
+            raise EvalError(f"for loop requires iterable (array or object), got {type(iterable_val).__name__}", "E011", node.pos)
+
+        if isinstance(iterable_val, list):
+            results = []
+            for item in iterable_val:
+                old_vars = dict(self.variables)
+                self.variables[node.var_name] = item
+                try:
+                    result = self._eval(node.body)
+                    results.append(result)
+                finally:
+                    self.variables = old_vars
+            return results
+        else:
+            results = []
+            for key, value in iterable_val.items():
+                old_vars = dict(self.variables)
+                self.variables[node.var_name] = value
+                try:
+                    result = self._eval(node.body)
+                    results.append(result)
+                finally:
+                    self.variables = old_vars
+            return results
 
     def _expand_template(self, name: str, pos: Position) -> Any:
         """Expand a template reference with deep copy."""
@@ -204,9 +273,9 @@ class Evaluator:
             if isinstance(val, Expression):
                 instance[key] = self._eval_with_self(val, instance)
 
-        # Store methods as callable wrappers
+        # Store methods as callable wrappers (using __bonMethod__ for consistency with TS)
         for name, md in resolved_methods.items():
-            instance[name] = {"__method__": md, "__class__": cd, "_instance": instance}
+            instance[name] = {"__bonMethod__": md, "__class__": cd, "_instance": instance}
 
         # Remove internal keys
         instance.pop("_class", None)
@@ -277,9 +346,9 @@ class Evaluator:
 
         obj = self._eval(node.obj)
 
-        # If obj is a dict with __method__, call the method directly
-        if isinstance(obj, dict) and "__method__" in obj:
-            md = obj["__method__"]
+        # If obj is a dict with __bonMethod__, call the method
+        if isinstance(obj, dict) and "__bonMethod__" in obj:
+            md = obj["__bonMethod__"]
             instance = obj["_instance"]
             args = [self._eval(arg) for arg in node.args]
 
@@ -294,8 +363,8 @@ class Evaluator:
         # If obj is a class instance (dict), look up the method on it
         if isinstance(obj, dict) and node.method in obj:
             method_val = obj[node.method]
-            if isinstance(method_val, dict) and "__method__" in method_val:
-                md = method_val["__method__"]
+            if isinstance(method_val, dict) and "__bonMethod__" in method_val:
+                md = method_val["__bonMethod__"]
                 instance = obj
                 args = [self._eval(arg) for arg in node.args]
 
@@ -454,7 +523,7 @@ class Evaluator:
         self.import_stack.append(filepath)
         try:
             program = parse(source, filepath)
-            imported = Evaluator(os.path.dirname(filepath))
+            imported = Evaluator(os.path.dirname(filepath), self.params)
             imported.templates = dict(self.templates)
             imported.classes = dict(self.classes)
             imported.variables = dict(self.variables)
@@ -487,20 +556,20 @@ def parse(source: str, filename: str = "<stdin>") -> Program:
     return parser.parse()
 
 
-def evaluate(source: str, base_dir: str = ".") -> Any:
+def evaluate(source: str, base_dir: str = ".", params: dict[str, Any] | None = None) -> Any:
     """Parse and evaluate BON source code, returning pure JSON."""
     program = parse(source)
-    evaluator = Evaluator(base_dir)
+    evaluator = Evaluator(base_dir, params)
     return evaluator.evaluate(program)
 
 
-def loads(source: str, base_dir: str = ".") -> Any:
+def loads(source: str, base_dir: str = ".", params: dict[str, Any] | None = None) -> Any:
     """Parse and evaluate BON source code (alias for evaluate)."""
-    return evaluate(source, base_dir)
+    return evaluate(source, base_dir, params)
 
 
-def load(filepath: str) -> Any:
+def load(filepath: str, params: dict[str, Any] | None = None) -> Any:
     """Load and evaluate a BON file."""
     with open(filepath, "r", encoding="utf-8") as f:
         source = f.read()
-    return evaluate(source, os.path.dirname(filepath))
+    return evaluate(source, os.path.dirname(filepath), params)

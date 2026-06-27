@@ -5,8 +5,12 @@ import json
 import sys
 from pathlib import Path
 
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 # ── 1. 直接调用库函数 ────────────────────────────────────
 from bon_py.evaluator import evaluate, load, EvalError
+
 
 print("=== 1. evaluate() 解析字符串 ===")
 result = evaluate('{"name": "BON", "version": "1.0"}')
@@ -14,7 +18,7 @@ print(json.dumps(result, indent=2, ensure_ascii=False))
 
 # ── 2. load() 加载文件 ────────────────────────────────────
 print("\n=== 2. load() 加载文件 ===")
-bon_file = Path(__file__).parent / "hello.bon"
+bon_file = PROJECT_ROOT / "tests" / "fixtures" / "hello.bon"
 result = load(str(bon_file))
 print(json.dumps(result, indent=2, ensure_ascii=False))
 
@@ -66,10 +70,18 @@ except EvalError as e:
 
 # ── 7. 批量处理 ──────────────────────────────────────────
 print("\n=== 7. 批量处理多个文件 ===")
-for bon_file in Path(__file__).parent.glob("*.bon"):
+
+for bon_file in PROJECT_ROOT.glob("tests/fixtures/*.bon"):
     try:
-        result = load(str(bon_file))
-        preview = json.dumps(result, ensure_ascii=False)[:80]
-        print(f"  {bon_file.name}: {preview}...")
+        is_if_var = bon_file.name == "if-var.bon"
+        if is_if_var:
+            r1 = load(str(bon_file), params={"env": "test", "debug": True})
+            r2 = load(str(bon_file), params={"env": "test", "debug": False})
+            print(f"  {bon_file.name} 1: {json.dumps(r1, ensure_ascii=False)}")
+            print(f"  {bon_file.name} 2: {json.dumps(r2, ensure_ascii=False)}")
+        else:
+            result = load(str(bon_file))
+            preview = json.dumps(result, ensure_ascii=False)
+            print(f"  {bon_file.name}: {preview}")
     except Exception as e:
         print(f"  {bon_file.name}: 失败 - {e}")

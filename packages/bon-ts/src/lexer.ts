@@ -5,12 +5,13 @@
 export type TokenType =
   | "STRING" | "NUMBER" | "TRUE" | "FALSE" | "NULL"
   | "IDENT" | "CLASS" | "EXTENDS" | "FN" | "RETURN" | "IMPORT" | "AS"
+  | "IF" | "ELSE" | "FOR" | "IN"
   | "LBRACE" | "RBRACE" | "LBRACKET" | "RBRACKET"
   | "COLON" | "COMMA" | "DOT" | "LPAREN" | "RPAREN"
   | "DASH" | "EQUALS"
   | "PLUS" | "MINUS" | "STAR" | "SLASH" | "PERCENT"
   | "GT" | "LT" | "GTE" | "LTE" | "EQ_EQ" | "BANG_EQ"
-  | "TEMPLATE_OPEN" | "EOF";
+  | "TEMPLATE_OPEN" | "PARAM" | "EOF";
 
 export interface Token {
   type: TokenType;
@@ -29,6 +30,10 @@ const KEYWORDS: Record<string, TokenType> = {
   true: "TRUE",
   false: "FALSE",
   null: "NULL",
+  if: "IF",
+  else: "ELSE",
+  for: "FOR",
+  in: "IN",
 };
 
 export class LexerError extends Error {
@@ -182,6 +187,17 @@ export class Lexer {
     return { type, value: ident, line: startLine, column: startCol };
   }
 
+  private readParam(): Token {
+    const startLine = this.line;
+    const startCol = this.column;
+    this.advance(); // consume $
+    let ident = "";
+    while (this.pos < this.source.length && (this.source[this.pos].match(/[a-zA-Z0-9_]/))) {
+      ident += this.advance();
+    }
+    return { type: "PARAM", value: ident, line: startLine, column: startCol };
+  }
+
   private checkTemplateRef(): Token | null {
     if (this.pos >= this.source.length || this.source[this.pos] !== "{") {
       return null;
@@ -192,16 +208,15 @@ export class Lexer {
     const savedCol = this.column;
 
     this.advance(); // consume {
-    this.skipWhitespace();
 
+    // Template references are {name} without spaces inside
     if (this.pos < this.source.length && (this.source[this.pos].match(/[a-zA-Z_]/))) {
       let ident = "";
       while (this.pos < this.source.length && (this.source[this.pos].match(/[a-zA-Z0-9_]/))) {
         ident += this.advance();
       }
 
-      this.skipWhitespace();
-
+      // Must be immediately followed by } - no spaces allowed
       if (this.pos < this.source.length && this.source[this.pos] === "}") {
         this.advance();
         return { type: "TEMPLATE_OPEN", value: ident, line: savedLine, column: savedCol };
@@ -239,6 +254,7 @@ export class Lexer {
           result.push(tmpl);
           continue;
         }
+        // Not a template ref, `{` will be handled below as LBRACE
       }
 
       // String
@@ -256,6 +272,12 @@ export class Lexer {
       // Identifier / keyword
       if ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch === "_") {
         result.push(this.readIdentifier());
+        continue;
+      }
+
+      // Parameter $var
+      if (ch === "$") {
+        result.push(this.readParam());
         continue;
       }
 

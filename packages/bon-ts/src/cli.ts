@@ -1,29 +1,42 @@
-#!/usr/bin/env node
-
 /**
  * BON CLI - Command-line interface for BON parser/evaluator.
  */
 
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { evaluate, EvalError } from "./evaluator.js";
+
+function parseParams(params: string[] | undefined): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  if (!params) return result;
+  for (const p of params) {
+    if (!p.includes("=")) {
+      throw new Error(`Invalid param format: ${p} (expected key=value)`);
+    }
+    const [key, ...rest] = p.split("=");
+    const val = rest.join("=");
+    // Try to parse as JSON value
+    try {
+      result[key] = JSON.parse(val);
+    } catch {
+      // Treat as string
+      result[key] = val;
+    }
+  }
+  return result;
+}
 
 function main(): number {
   const args = process.argv.slice(2);
 
-  if (args.length === 0) {
-    console.error("Usage: bon <file> | bon -e <expression> | bon -p <file>");
-    console.error("  -e <expr>   Evaluate BON expression from string");
-    console.error("  -p <file>   Pretty-print JSON output");
-    console.error("  -c <file>   Compact JSON output");
-    return 1;
-  }
-
   let pretty = true;
   let expr: string | null = null;
   let file: string | null = null;
+  const paramsList: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
+    const arg = args[i];
+    switch (arg) {
       case "-e":
       case "--eval":
         expr = args[++i];
@@ -42,22 +55,29 @@ function main(): number {
           file = args[++i];
         }
         break;
+      case "--param":
+        while (i + 1 < args.length && !args[i + 1].startsWith("-")) {
+          paramsList.push(args[++i]);
+        }
+        break;
       default:
-        if (!args[i].startsWith("-")) {
-          file = args[i];
+        if (!arg.startsWith("-")) {
+          file = arg;
         }
         break;
     }
   }
 
   try {
+    const params = parseParams(paramsList);
+
     let result: unknown;
 
     if (expr) {
-      result = evaluate(expr);
+      result = evaluate(expr, ".", params);
     } else if (file) {
       const source = fs.readFileSync(file, "utf-8");
-      result = evaluate(source, require("node:path").dirname(file));
+      result = evaluate(source, path.dirname(file), params);
     } else {
       // Read from stdin
       const chunks: Buffer[] = [];
@@ -69,7 +89,7 @@ function main(): number {
         chunks.push(buf.subarray(0, bytesRead));
       } while (bytesRead > 0);
       fs.closeSync(fd);
-      result = evaluate(Buffer.concat(chunks).toString("utf-8"));
+      result = evaluate(Buffer.concat(chunks).toString("utf-8"), ".", params);
     }
 
     const indent = pretty ? 2 : undefined;

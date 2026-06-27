@@ -1,11 +1,13 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ESNEXT",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
   },
   "include": ["*.ts", "../packages/bon-ts/src/**/*.ts"]
 }

@@ -1,0 +1,1 @@
+{"result": if (1 > 2) { "greater" } else { "not greater" }}

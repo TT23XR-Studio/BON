@@ -19,13 +19,16 @@ export class EvalError extends Error {
 }
 export class Evaluator {
     baseDir;
+    params;
     templates = {};
     classes = {};
     variables = {};
     importStack = [];
     callFn;
-    constructor(baseDir = ".") {
+    MAX_ITERATIONS = 10000;
+    constructor(baseDir = ".", params = {}) {
         this.baseDir = baseDir;
+        this.params = params;
         this.callFn = this.createFnCaller();
     }
     createFnCaller() {
@@ -71,6 +74,8 @@ export class Evaluator {
                 return n.value;
             case "Identifier":
                 return this.resolveIdentifier(n.name, n.pos);
+            case "Param":
+                return this.resolveParam(n.name, n.pos);
             case "TemplateRef":
                 return this.expandTemplate(n.name, n.pos);
             case "TemplateDef":
@@ -96,11 +101,27 @@ export class Evaluator {
                 return n.elements.map((el) => this.eval(el));
             case "ObjectLit": {
                 const obj = {};
-                for (const [key, val] of Object.entries(n.pairs)) {
-                    obj[key] = this.eval(val);
+                const objNode = n;
+                for (const [key, val] of Object.entries(objNode.pairs)) {
+                    // Handle $param keys
+                    if (key.startsWith("__param_key__")) {
+                        const paramName = key.slice("__param_key__".length);
+                        const actualKey = this.resolveParam(paramName, objNode.pos);
+                        if (typeof actualKey !== "string") {
+                            throw new EvalError(`Object key from $ variable must be string, got ${typeof actualKey}`, "E011", objNode.pos);
+                        }
+                        obj[actualKey] = this.eval(val);
+                    }
+                    else {
+                        obj[key] = this.eval(val);
+                    }
                 }
                 return obj;
             }
+            case "IfExpr":
+                return this.evalIfExpr(n);
+            case "ForLoop":
+                return this.evalForLoop(n);
             case "ReturnStmt":
                 return this.eval(n.value);
             case "VariableAssign": {
@@ -120,6 +141,13 @@ export class Evaluator {
         if (name in this.classes)
             return this.classes[name];
         throw new EvalError(`Undefined identifier: ${name}`, "E001", pos);
+    }
+    resolveParam(name, pos) {
+        if (!(name in this.params)) {
+            const available = Object.keys(this.params).join(", ");
+            throw new EvalError(`Missing parameter: $${name}. Available: $${available}`, "E009", pos);
+        }
+        return this.params[name];
     }
     expandTemplate(name, pos) {
         if (!(name in this.templates)) {
@@ -149,9 +177,9 @@ export class Evaluator {
                 instance[key] = this.evalWithSelf(val, instance);
             }
         }
-        // Store methods
+        // Store methods (without instance reference to avoid cycle in JSON output)
         for (const [name, md] of Object.entries(resolvedMethods)) {
-            instance[name] = { __method__: true, def: md, classDef: cd, instance };
+            instance[name] = { __bonMethod__: true, def: md, classDef: cd };
         }
         return instance;
     }
@@ -214,23 +242,10 @@ export class Evaluator {
             throw new EvalError(`Undefined std function: ${funcName}`, "E001", node.pos);
         }
         const obj = this.eval(node.obj);
-        // If obj is a dict with __method__, call the method directly
-        if (obj && typeof obj === "object" && "__method__" in obj) {
-            const m = obj;
-            const args = node.args.map((a) => this.eval(a));
-            const oldVars = { ...this.variables };
-            this.variables["self"] = m.instance;
-            try {
-                return this.evalFuncDef(m.def, args, {});
-            }
-            finally {
-                this.variables = oldVars;
-            }
-        }
         // If obj is a class instance (dict), look up the method on it
         if (obj && typeof obj === "object" && !Array.isArray(obj) && node.method in obj) {
             const methodVal = obj[node.method];
-            if (methodVal && typeof methodVal === "object" && "__method__" in methodVal) {
+            if (methodVal && typeof methodVal === "object" && "__bonMethod__" in methodVal) {
                 const m = methodVal;
                 const args = node.args.map((a) => this.eval(a));
                 const oldVars = { ...this.variables };
@@ -367,6 +382,51 @@ export class Evaluator {
         }
         throw new EvalError(`Cannot access property on ${typeLabel(obj)}`, "E007", node.pos);
     }
+    evalIfExpr(node) {
+        const cond = this.eval(node.cond);
+        if (typeof cond !== "boolean") {
+            throw new EvalError(`if condition must be boolean, got ${typeof cond}`, "E011", node.pos);
+        }
+        if (cond) {
+            return this.eval(node.thenExpr);
+        }
+        else if (node.elseExpr !== null) {
+            return this.eval(node.elseExpr);
+        }
+        return null;
+    }
+    evalForLoop(node) {
+        const iterable = this.eval(node.iterable);
+        if (!Array.isArray(iterable) && (iterable === null || typeof iterable !== "object")) {
+            throw new EvalError(`for loop requires iterable (array or object), got ${typeLabel(iterable)}`, "E011", node.pos);
+        }
+        const results = [];
+        if (Array.isArray(iterable)) {
+            for (const item of iterable) {
+                const oldVars = { ...this.variables };
+                this.variables[node.varName] = item;
+                try {
+                    results.push(this.eval(node.body));
+                }
+                finally {
+                    this.variables = oldVars;
+                }
+            }
+        }
+        else {
+            for (const [_key, value] of Object.entries(iterable)) {
+                const oldVars = { ...this.variables };
+                this.variables[node.varName] = value;
+                try {
+                    results.push(this.eval(node.body));
+                }
+                finally {
+                    this.variables = oldVars;
+                }
+            }
+        }
+        return results;
+    }
     resolveImport(imp) {
         const filepath = path.resolve(this.baseDir, imp.path);
         if (this.importStack.includes(filepath)) {
@@ -379,7 +439,7 @@ export class Evaluator {
         const source = fs.readFileSync(filepath, "utf-8");
         this.importStack.push(filepath);
         try {
-            const imported = new Evaluator(path.dirname(filepath));
+            const imported = new Evaluator(path.dirname(filepath), this.params);
             imported.templates = { ...this.templates };
             imported.classes = { ...this.classes };
             imported.variables = { ...this.variables };
@@ -403,6 +463,25 @@ export class Evaluator {
             }
             this.variables[imp.alias] = ns;
         }
+    }
+    sanitize(obj) {
+        if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+            const rec = obj;
+            if ("__bonMethod__" in rec) {
+                return null;
+            }
+            const result = {};
+            for (const [k, v] of Object.entries(rec)) {
+                if (!k.startsWith("__")) {
+                    result[k] = this.sanitize(v);
+                }
+            }
+            return result;
+        }
+        if (Array.isArray(obj)) {
+            return obj.map((item) => this.sanitize(item));
+        }
+        return obj;
     }
 }
 // ── Helpers ──────────────────────────────────────────────────
@@ -431,16 +510,17 @@ export function parse(source, filename = "<stdin>") {
     const parser = new Parser(tokens);
     return parser.parse();
 }
-export function evaluate(source, baseDir = ".") {
+export function evaluate(source, baseDir = ".", params = {}) {
     const program = parse(source);
-    const evaluator = new Evaluator(baseDir);
-    return evaluator.evaluate(program);
+    const evaluator = new Evaluator(baseDir, params);
+    const result = evaluator.evaluate(program);
+    return evaluator.sanitize(result);
 }
-export function loads(source, baseDir = ".") {
-    return evaluate(source, baseDir);
+export function loads(source, baseDir = ".", params = {}) {
+    return evaluate(source, baseDir, params);
 }
-export function load(filepath) {
+export function load(filepath, params = {}) {
     const source = fs.readFileSync(filepath, "utf-8");
-    return evaluate(source, path.dirname(filepath));
+    return evaluate(source, path.dirname(filepath), params);
 }
 //# sourceMappingURL=evaluator.js.map
