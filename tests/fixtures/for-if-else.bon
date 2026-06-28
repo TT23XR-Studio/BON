@@ -1,1 +1,36 @@
-{"outputs": for x in [1, 2, 3, 4, 5] { if (x > 3) { x } else { 10 - x } }}
+# ── For with if/else: Filter values in array ──────────────────
+
+{"filtered": for x in [1, 2, 3, 4, 5] if (x > 3) { x } else { 10 - x }}
+
+# ── For with if/else: Conditional labels ──────────────────────
+
+{"labels": for i in 0..5 if (i == 0) { "zero" } else if (i % 2 == 0) { "even" } else { "odd" }}
+
+# ── For with if (no else) inside object block context ─────────
+
+# Key-value iteration: only even values produce entries
+{"partial": for k, v in {"a": 1, "b": 2, "c": 3, "d": 4} {
+    if (v % 2 == 0) { k: v }
+}}
+
+# ── For over object with if/else ──────────────────────────────
+
+{"kv_filtered": for k, v in {"dev": "debug", "staging": "warn", "prod": "error"} {
+    if (k == "prod") {
+        k: std.upper(v)
+    } else {
+        k: v
+    }
+}}
+
+# ── For with if inside object literal ─────────────────────────
+
+{
+    "env_configs": for env_name in ["dev", "prod"] {
+        env_name: { "replicas": if (env_name == "prod") { 5 } else { 1 }, "debug": if (env_name == "prod") { false } else { true } }
+    }
+}
+
+# ── For with if using params ──────────────────────────────────
+
+{"param_filtered": for x in [1, 2, 3, 4, 5] if (x > 2) { x } else { 0 }}

@@ -9,6 +9,7 @@ import type {
   BinaryOp,
   ClassDef,
   ClassInstance,
+  ConditionalBlock,
   Expression,
   FuncCall,
   FuncDef,
@@ -18,6 +19,7 @@ import type {
   MethodCall,
   MethodDef,
   ObjectLit,
+  ObjectPair,
   Param,
   Position,
   Program,
@@ -29,6 +31,7 @@ import type {
   VariableAssign,
   IfExpr,
   ForLoop,
+  Range,
 } from "./ast.js";
 
 export class ParseError extends Error {
@@ -103,6 +106,16 @@ export class Parser {
     // Parse top-level definitions
     while (this.current().type !== "EOF") {
       const tok = this.current();
+
+      if (tok.type === "PARAM") {
+        // $var = value is not allowed - $ prefix is read-only
+        if (this.peek(1).type === "EQUALS") {
+          throw new ParseError(`Cannot assign to parameter '$${tok.value}'. Parameters are read-only and must be passed at compile time.`, tok);
+        }
+        // Expression context - $var as expression
+        body.push(this.parseExpression());
+        continue;
+      }
 
       if (tok.type === "IDENT") {
         // Template def: name-{ ... }
@@ -182,7 +195,19 @@ export class Parser {
         const md = this.parseMethodDef();
         methods[md.name] = md;
       } else {
-        const key = this.parseObjectKey();
+        const keyTok = this.current();
+        let key: string;
+        // Static keys for class members (no expressions)
+        if (keyTok.type === "STRING") {
+          this.advance();
+          key = keyTok.value as string;
+        } else if (keyTok.type === "PARAM") {
+          const paramName = keyTok.value as string;
+          this.advance();
+          key = `__param_key__${paramName}`;
+        } else {
+          key = this.expect("IDENT").value as string;
+        }
         this.expect("COLON");
         const val = this.parseExpression();
         members[key] = val;
@@ -427,16 +452,89 @@ export class Parser {
     return { kind: "IfExpr", cond, thenExpr, elseExpr, pos };
   }
 
+  private parseConditionalBlock(): ConditionalBlock {
+    const pos = this.pos_();
+    this.expect("IF");
+    const cond = this.parseExpression();
+    this.expect("LBRACE");
+    const thenBody: ObjectPair[] = [];
+    while (this.current().type !== "RBRACE") {
+      const keyTok = this.current();
+      let key: Expression;
+      if (keyTok.type === "STRING") {
+        key = { kind: "Literal", value: this.advance().value as string, pos: this.pos_() };
+      } else if (keyTok.type === "PARAM") {
+        key = { kind: "Param", name: this.advance().value as string, pos: this.pos_() };
+      } else {
+        key = { kind: "Identifier", name: this.expect("IDENT").value as string, pos: this.pos_() };
+      }
+      this.expect("COLON");
+      const val = this.parseExpression();
+      thenBody.push({ key, value: val });
+      this.match("COMMA");
+    }
+    this.expect("RBRACE");
+
+    let elseBody: ObjectPair[] | null = null;
+    if (this.current().type === "ELSE") {
+      this.advance();
+      this.expect("LBRACE");
+      elseBody = [];
+      while (this.current().type !== "RBRACE") {
+        const keyTok = this.current();
+        let key: Expression;
+        if (keyTok.type === "STRING") {
+          key = { kind: "Literal", value: this.advance().value as string, pos: this.pos_() };
+        } else if (keyTok.type === "PARAM") {
+          key = { kind: "Param", name: this.advance().value as string, pos: this.pos_() };
+        } else {
+          key = { kind: "Identifier", name: this.expect("IDENT").value as string, pos: this.pos_() };
+        }
+        this.expect("COLON");
+        const val = this.parseExpression();
+        elseBody.push({ key, value: val });
+        this.match("COMMA");
+      }
+      this.expect("RBRACE");
+    }
+
+    return { kind: "ConditionalBlock", cond, thenBody, elseBody, pos };
+  }
+
   private parseForLoop(): ForLoop {
     const pos = this.pos_();
     this.expect("FOR");
     const varName = this.expect("IDENT").value as string;
+    let varName2: string | null = null;
+    if (this.match("COMMA")) {
+      varName2 = this.expect("IDENT").value as string;
+    }
     this.expect("IN");
-    const iterable = this.parseExpression();
-    this.expect("LBRACE");
+    const iterable = this.parseRangeOrExpression();
+    // Body is a single expression (may be object literal or just expression)
     const body = this.parseExpression();
-    this.expect("RBRACE");
-    return { kind: "ForLoop", varName, iterable, body, pos };
+    return { kind: "ForLoop", varName, varName2, iterable, body, pos };
+  }
+
+  private parseRangeOrExpression(): Expression {
+    // Check for range: NUMBER DOT_DOT NUMBER
+    if (this.current().type === "NUMBER" && this.peek(1).type === "DOT_DOT") {
+      const pos = this.pos_();
+      const startTok = this.advance();
+      const start = startTok.value as number;
+      this.advance(); // consume DOT_DOT
+      const endTok = this.expect("NUMBER");
+      const end = endTok.value as number;
+      // Validate non-negative
+      if (start < 0 || end < 0) {
+        throw new ParseError("Range bounds must be non-negative", endTok);
+      }
+      if (start > end) {
+        throw new ParseError("Range start must not exceed end", endTok);
+      }
+      return { kind: "Range", start, end, pos };
+    }
+    return this.parseExpression();
   }
 
   private parseAnonymousFn(): FuncDef {
@@ -465,7 +563,14 @@ export class Parser {
     const overrides: Record<string, Expression> = {};
 
     while (this.current().type !== "RBRACE") {
-      const key = this.parseObjectKey();
+      const keyTok = this.current();
+      let key: string;
+      if (keyTok.type === "STRING") {
+        this.advance();
+        key = keyTok.value as string;
+      } else {
+        key = this.expect("IDENT").value as string;
+      }
       this.expect("COLON");
       const val = this.parseExpression();
       overrides[key] = val;
@@ -493,54 +598,41 @@ export class Parser {
     return { kind: "ArrayLit", elements, pos };
   }
 
-  private parseObjectKey(): string {
-    const tok = this.current();
-    if (tok.type === "STRING") {
-      this.advance();
-      return tok.value as string;
-    }
-    if (tok.type === "PARAM") {
-      // $param as object key - return marker for later resolution
-      const paramName = tok.value as string;
-      this.advance();
-      return `__param_key__${paramName}`;
-    }
-    return this.expect("IDENT").value as string;
-  }
-
   private parseObjectLiteral(): ObjectLit {
     const pos = this.pos_();
     this.expect("LBRACE");
-    const pairs: Record<string, Expression> = {};
+    const pairs: ObjectPair[] = [];
+    const conditions: ConditionalBlock[] = [];
 
     while (this.current().type !== "RBRACE") {
-      // Bare template reference as value
-      if (this.current().type === "TEMPLATE_OPEN") {
-        const val = this.parseExpression();
-        if (val.kind === "TemplateRef") {
-          pairs[val.name] = val;
-        } else {
-          pairs["_"] = val;
-        }
-      } else if (this.current().type === "IDENT" && this.peek(1).type !== "COLON") {
-        // Bare identifier (not followed by colon) - could be template ref
-        const val = this.parseExpression();
-        if (val.kind === "TemplateRef") {
-          pairs[val.name] = val;
-        } else {
-          pairs["_"] = val;
-        }
+      if (this.current().type === "IF") {
+        conditions.push(this.parseConditionalBlock());
       } else {
-        const key = this.parseObjectKey();
-        this.expect("COLON");
-        const val = this.parseExpression();
-        pairs[key] = val;
+        // Check if this looks like an expression key (followed by colon)
+        const savedPos = this.pos;
+        const key = this.parseExpression();
+        
+        // If followed by COLON, this was a key - parse the value
+        if (this.current().type === "COLON") {
+          this.expect("COLON");
+          const val = this.parseExpression();
+          pairs.push({ key, value: val });
+        } else {
+          // This was a value (bare expression) - backtrack and parse as value
+          this.pos = savedPos;
+          const val = this.parseExpression();
+          if (val.kind === "TemplateRef") {
+            pairs.push({ key: val, value: { kind: "Literal", value: true, pos: val.pos } });
+          } else {
+            pairs.push({ key: { kind: "Literal", value: "_", pos }, value: val });
+          }
+        }
       }
       this.match("COMMA");
     }
 
     this.expect("RBRACE");
-    return { kind: "ObjectLit", pairs, pos };
+    return { kind: "ObjectLit", pairs, conditions: conditions.length > 0 ? conditions : undefined, pos };
   }
 
   private parseFuncCallName(name: string, pos: Position): FuncCall {

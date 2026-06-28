@@ -20,6 +20,9 @@
     "syntax"
   ],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:bon"
+  ],
   "contributes": {
     "languages": [
       {
@@ -78,6 +81,26 @@
           "type": "boolean",
           "default": true,
           "description": "Enable built-in std library completions"
+        },
+        "bon.enableDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable real-time error diagnostics for .bon files"
+        },
+        "bon.params": {
+          "type": "object",
+          "default": {},
+          "description": "Compile-time parameters to inject during diagnostics (JSON object). E.g. {\"env\": \"dev\", \"debug\": true}",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null",
+              "array",
+              "object"
+            ]
+          }
         }
       }
     }
@@ -88,6 +111,9 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"
+  },
+  "dependencies": {
+    "bon-ts": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

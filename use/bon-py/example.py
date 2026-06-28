@@ -74,11 +74,21 @@ print("\n=== 7. 批量处理多个文件 ===")
 for bon_file in PROJECT_ROOT.glob("tests/fixtures/*.bon"):
     try:
         is_if_var = bon_file.name == "if-var.bon"
+        is_complete = bon_file.name == "complete.bon"
         if is_if_var:
             r1 = load(str(bon_file), params={"env": "test", "debug": True})
             r2 = load(str(bon_file), params={"env": "test", "debug": False})
+            r3 = load(str(bon_file), params={"env": "test", "debug": None})
             print(f"  {bon_file.name} 1: {json.dumps(r1, ensure_ascii=False)}")
             print(f"  {bon_file.name} 2: {json.dumps(r2, ensure_ascii=False)}")
+            print(f"  {bon_file.name} 3: {json.dumps(r3, ensure_ascii=False)}")
+        elif is_complete:
+            r1 = load(str(bon_file), params={"env": "test", "feature": "Emmm", "version": "1.0", "service_name": "my-service"})
+            r2 = load(str(bon_file), params={"env": "test", "feature": None, "version": "1.0", "service_name": "my-service"})
+            r3 = load(str(bon_file), params={"env": "test", "feature": True, "version": "1.0", "service_name": "my-service"})
+            print(f"  {bon_file.name} 1: {json.dumps(r1, ensure_ascii=False)}")
+            print(f"  {bon_file.name} 2: {json.dumps(r2, ensure_ascii=False)}")
+            print(f"  {bon_file.name} 3: {json.dumps(r3, ensure_ascii=False)}")
         else:
             result = load(str(bon_file))
             preview = json.dumps(result, ensure_ascii=False)

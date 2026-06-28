@@ -1,6 +1,13 @@
 import * as vscode from "vscode";
+import { evaluate, load, EvalError } from "bon-ts";
+import { Lexer } from "bon-ts/lexer";
+import { Parser, ParseError } from "bon-ts/parser";
+
+let diagnosticCollection: vscode.DiagnosticCollection;
 
 export function activate(context: vscode.ExtensionContext) {
+  diagnosticCollection = vscode.languages.createDiagnosticCollection("bon");
+
   // Register completion provider
   const completionProvider = vscode.languages.registerCompletionItemProvider(
     "bon",
@@ -22,10 +29,132 @@ export function activate(context: vscode.ExtensionContext) {
     new BonDefinitionProvider()
   );
 
-  context.subscriptions.push(completionProvider, hoverProvider, definitionProvider);
+  // Register diagnostic provider
+  const openListener = vscode.workspace.onDidOpenTextDocument(triggerDiagnostics);
+  const changeListener = vscode.workspace.onDidChangeTextDocument(triggerChange);
+  const closeListener = vscode.workspace.onDidCloseTextDocument((doc) => {
+    if (doc.languageId === "bon") {
+      diagnosticCollection.delete(doc.uri);
+    }
+  });
+
+  // Run diagnostics on already-open documents
+  for (const doc of vscode.workspace.textDocuments) {
+    if (doc.languageId === "bon") {
+      updateDiagnostics(doc);
+    }
+  }
+
+  context.subscriptions.push(
+    completionProvider,
+    hoverProvider,
+    definitionProvider,
+    openListener,
+    changeListener,
+    closeListener,
+    diagnosticCollection
+  );
 }
 
 export function deactivate() {}
+
+// ── Debounced diagnostic helpers ──────────────────────────────
+
+const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function triggerDiagnostics(document: vscode.TextDocument): void {
+  if (document.languageId !== "bon") return;
+  updateDiagnostics(document);
+}
+
+function triggerChange(event: vscode.TextDocumentChangeEvent): void {
+  if (event.document.languageId !== "bon") return;
+  const key = event.document.uri.toString();
+  const existing = debounceTimers.get(key);
+  if (existing) clearTimeout(existing);
+  debounceTimers.set(
+    key,
+    setTimeout(() => {
+      debounceTimers.delete(key);
+      updateDiagnostics(event.document);
+    }, 500)
+  );
+}
+
+function updateDiagnostics(document: vscode.TextDocument): void {
+  const config = vscode.workspace.getConfiguration("bon");
+  if (!config.get<boolean>("enableDiagnostics", true)) {
+    diagnosticCollection.delete(document.uri);
+    return;
+  }
+
+  const text = document.getText();
+  const diagnostics: vscode.Diagnostic[] = [];
+  const params = config.get<Record<string, unknown>>("params", {});
+
+  // Phase 1: Lexer + Parser (syntax errors)
+  try {
+    const lexer = new Lexer(text);
+    const tokens = lexer.tokens();
+    const parser = new Parser(tokens);
+    parser.parse();
+  } catch (e: unknown) {
+    if (e instanceof ParseError) {
+      const diag = errorToDiagnostic(e.message, e.pos);
+      if (diag) diagnostics.push(diag);
+    } else if (e instanceof Error) {
+      const diag = new vscode.Diagnostic(
+        new vscode.Range(0, 0, 0, 10),
+        e.message,
+        vscode.DiagnosticSeverity.Error
+      );
+      diagnostics.push(diag);
+    }
+  }
+
+  // Phase 2: Evaluation (semantic errors) only if syntax is clean
+  if (diagnostics.length === 0) {
+    try {
+      // Determine base dir for import resolution
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+      const baseDir = workspaceFolder
+        ? workspaceFolder.uri.fsPath
+        : document.uri.fsPath;
+      evaluate(text, baseDir, params);
+    } catch (e: unknown) {
+      if (e instanceof EvalError) {
+        const diag = errorToDiagnostic(e.message, e.pos);
+        if (diag) diagnostics.push(diag);
+      } else if (e instanceof Error) {
+        const diag = new vscode.Diagnostic(
+          new vscode.Range(0, 0, 0, 10),
+          e.message,
+          vscode.DiagnosticSeverity.Error
+        );
+        diagnostics.push(diag);
+      }
+    }
+  }
+
+  diagnosticCollection.set(document.uri, diagnostics);
+}
+
+function errorToDiagnostic(
+  message: string,
+  pos?: { line: number; column: number }
+): vscode.Diagnostic | null {
+  if (!pos) return null;
+  const line = Math.max(0, pos.line - 1);
+  const col = Math.max(0, pos.column - 1);
+  const range = new vscode.Range(line, col, line, col + 10);
+  const diagnostic = new vscode.Diagnostic(
+    range,
+    message,
+    vscode.DiagnosticSeverity.Error
+  );
+  diagnostic.source = "bon";
+  return diagnostic;
+}
 
 // ── Completion Provider ──────────────────────────────────────
 
@@ -180,8 +309,6 @@ class BonCompletionProvider implements vscode.CompletionItemProvider {
     _document: vscode.TextDocument,
     _position: vscode.Position
   ): vscode.CompletionItem[] {
-    // In a real implementation, we'd scan the document for template definitions
-    // For now, return a placeholder
     return [];
   }
 }

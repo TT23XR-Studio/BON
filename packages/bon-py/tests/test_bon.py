@@ -364,16 +364,45 @@ class TestEndToEnd:
             os.path.dirname(__file__), "..", "..", "..", "tests", "fixtures", "complete.bon"
         )
         if os.path.exists(fixture_path):
-            result = load(fixture_path)
-            # The complete.bon file has multiple top-level expressions
-            # The last one is the main object with all test cases
+            result = load(fixture_path, params={"env": "prod", "feature": True, "version": "v1.0", "service_name": "api"})
             if isinstance(result, list):
-                result = result[-1]  # Get the last (main) object
+                result = result[-1]
             assert isinstance(result, dict)
             assert result["json_obj"]["a"] == 1
             assert result["upper"] == "HELLO"
             assert result["map"] == [2, 4]
             assert result["admin_age"] == 36
+            assert result["param_env"] == "prod"
+            assert result["param_feature"] is True
+            assert result["for_double"] == [2, 4, 6]
+            assert result["for_subnets"] == ["10.0.0.0/24", "10.0.1.0/24", "10.0.2.0/24"]
+            assert result["for_filtered"] == [9, 8, 7, 4, 5]
+            assert result["for_evens"] == [2, 4]
+            assert result["if_replicas"] == 5
+
+    def test_for_fixture(self):
+        fixture_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "tests", "fixtures", "for.bon"
+        )
+        if os.path.exists(fixture_path):
+            result = load(fixture_path)
+            result_list = result if isinstance(result, list) else [result]
+            assert any(r.get("array_basic") == [2, 4, 6] for r in result_list if isinstance(r, dict))
+            assert any(r.get("range_basic") == ["0", "1", "2"] for r in result_list if isinstance(r, dict))
+            assert any(r.get("object_kv") == {"alice_age": 30, "bob_age": 25} for r in result_list if isinstance(r, dict))
+            assert any(r.get("reports") == {"alice_report": "Score is 10", "bob_report": "Score is 20"} for r in result_list if isinstance(r, dict))
+
+    def test_for_if_else_fixture(self):
+        fixture_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "tests", "fixtures", "for-if-else.bon"
+        )
+        if os.path.exists(fixture_path):
+            result = load(fixture_path, params={"min": 2})
+            result_list = result if isinstance(result, list) else [result]
+            assert any(r.get("filtered") == [9, 8, 7, 4, 5] for r in result_list if isinstance(r, dict))
+            assert any(r.get("labels") == ["zero", "odd", "even", "odd", "even"] for r in result_list if isinstance(r, dict))
+            assert any(r.get("partial") == {"k": 4} for r in result_list if isinstance(r, dict))
+            assert any(r.get("param_filtered") == [0, 0, 3, 4, 5] for r in result_list if isinstance(r, dict))
 
 
 # ── Params ───────────────────────────────────────────────────────
@@ -392,6 +421,53 @@ class TestParams:
         with pytest.raises(EvalError, match="E009"):
             evaluate('{"env": $missing}')
 
+# ── Conditional Block (if in object context) ────────────────────
+
+class TestConditionalBlock:
+    def test_if_block_true(self):
+        result = evaluate('{"name": "app", if true { "debug": true }}')
+        assert result == {"name": "app", "debug": True}
+
+    def test_if_block_false(self):
+        result = evaluate('{"name": "app", if false { "debug": true }}')
+        assert result == {"name": "app"}
+
+    def test_if_block_true_multiple(self):
+        result = evaluate('{"name": "app", if true { "debug": true, "verbose": false }}')
+        assert result == {"name": "app", "debug": True, "verbose": False}
+
+    def test_if_block_false_no_else(self):
+        """Condition false with no else should prune the entire block."""
+        result = evaluate('{"name": "app", if false { "debug": true, "verbose": false }}')
+        assert result == {"name": "app"}
+
+    def test_if_block_with_else(self):
+        result = evaluate('{"name": "app", if false { "debug": true } else { "debug": false }}')
+        assert result == {"name": "app", "debug": False}
+
+    def test_if_block_else_multiple(self):
+        result = evaluate('{"name": "app", if false { "debug": true, "verbose": false } else { "debug": false, "verbose": true }}')
+        assert result == {"name": "app", "debug": False, "verbose": True}
+
+    def test_if_block_with_params(self):
+        result = evaluate('{"name": "app", if ($env == "dev") { "debug": true } else { "debug": false }}', params={"env": "dev"})
+        assert result == {"name": "app", "debug": True}
+
+    def test_if_block_with_params_prod(self):
+        result = evaluate('{"name": "app", if ($env == "dev") { "debug": true } else { "debug": false }}', params={"env": "prod"})
+        assert result == {"name": "app", "debug": False}
+
+    def test_multiple_conditional_blocks(self):
+        result = evaluate('''
+            {
+                "name": "app",
+                if ($env == "dev") { "debug": true },
+                if ($feature_x) { "x": "enabled" }
+            }
+        ''', params={"env": "dev", "feature_x": True})
+        assert result == {"name": "app", "debug": True, "x": "enabled"}
+
+
 # ── If Expression ─────────────────────────────────────────────────
 
 class TestIfExpr:
@@ -404,8 +480,8 @@ class TestIfExpr:
         assert result == "no"
 
     def test_if_no_else(self):
-        result = evaluate('if (false) { "yes" }')
-        assert result is None
+        result = evaluate('{"val": if (false) { "yes" } }')
+        assert result == {}
 
     def test_if_with_comparison(self):
         result = evaluate('if (1 > 2) { "big" } else { "small" }')
@@ -414,6 +490,11 @@ class TestIfExpr:
     def test_if_else_if(self):
         result = evaluate('if (false) { "a" } else if (true) { "b" } else { "c" }')
         assert result == "b"
+
+    def test_if_no_else_expr_context_error(self):
+        """Expression context if without else should raise error."""
+        with pytest.raises(EvalError, match="E011"):
+            evaluate('if (false) { "yes" }')
 
 
 # ── For Loop ─────────────────────────────────────────────────────
@@ -428,5 +509,66 @@ class TestForLoop:
         assert result["outputs"] == []
 
     def test_for_object(self):
-        result = evaluate('{"outputs": for v in {"a": 1, "b": 2} { v }}')
-        assert sorted(result["outputs"]) == [1, 2]
+        # Test key-value iteration produces an object
+        result = evaluate('for k, v in {"a": 1} { "result": v }')
+        assert result == {"result": 1}
+
+
+# ── Error Codes ──────────────────────────────────────────────
+
+class TestErrorCodes:
+    def test_e009_missing_param(self):
+        with pytest.raises(EvalError, match="E009"):
+            evaluate('{"env": $missing}')
+
+    def test_e010_iteration_limit(self):
+        with pytest.raises(EvalError, match="E010"):
+            evaluate("for i in 0..15000 { i }")
+
+    def test_truthiness_number_zero(self):
+        result = evaluate('if (0) { "yes" } else { "no" }')
+        assert result == "no"
+
+    def test_truthiness_number_nonzero(self):
+        result = evaluate('if (1) { "yes" } else { "no" }')
+        assert result == "yes"
+
+    def test_truthiness_string_empty(self):
+        result = evaluate('if ("") { "yes" } else { "no" }')
+        assert result == "no"
+
+    def test_truthiness_string_nonempty(self):
+        result = evaluate('if ("x") { "yes" } else { "no" }')
+        assert result == "yes"
+
+    def test_truthiness_null(self):
+        result = evaluate('if (null) { "yes" } else { "no" }')
+        assert result == "no"
+
+    def test_truthiness_array_empty(self):
+        result = evaluate('if ([]) { "yes" } else { "no" }')
+        assert result == "no"
+
+    def test_truthiness_array_nonempty(self):
+        result = evaluate('if ([1]) { "yes" } else { "no" }')
+        assert result == "yes"
+
+    def test_truthiness_object_empty(self):
+        result = evaluate('if ({}) { "yes" } else { "no" }')
+        assert result == "no"
+
+    def test_truthiness_object_nonempty(self):
+        result = evaluate('if ({"a": 1}) { "yes" } else { "no" }')
+        assert result == "yes"
+
+    def test_e011_if_without_else_expr_context(self):
+        with pytest.raises(EvalError, match="E011"):
+            evaluate('if (false) { "yes" }')
+
+    def test_e011_for_requires_iterable(self):
+        with pytest.raises(EvalError, match="E011"):
+            evaluate('for x in "not iterable" { x }')
+
+    def test_e011_param_key_not_string(self):
+        with pytest.raises(EvalError, match="E011"):
+            evaluate("{$bad: 1}", params={"bad": 42})

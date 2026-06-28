@@ -36,7 +36,8 @@ class TokenType(Enum):
     RBRACKET = auto()    # ]
     COLON = auto()       # :
     COMMA = auto()       # ,
-    DOT = auto()         # .
+    DOT = auto()         # . (not currently used, range uses ..)
+    DOT_DOT = auto()  # .. for range
     LPAREN = auto()      # (
     RPAREN = auto()      # )
     DASH = auto()         # - (for template definition name-{})
@@ -186,11 +187,15 @@ class Lexer:
         while self.pos < len(self.source) and self.source[self.pos].isdigit():
             num_str += self._advance()
 
+        # Check for .. (range) vs . (decimal point) - only consume . if followed by digit
         if self.pos < len(self.source) and self.source[self.pos] == ".":
-            has_dot = True
-            num_str += self._advance()
-            while self.pos < len(self.source) and self.source[self.pos].isdigit():
+            if self.pos + 1 < len(self.source) and self.source[self.pos + 1] == ".":
+                pass  # This is for range, don't consume
+            else:
+                has_dot = True
                 num_str += self._advance()
+                while self.pos < len(self.source) and self.source[self.pos].isdigit():
+                    num_str += self._advance()
 
         if self.pos < len(self.source) and self.source[self.pos] in "eE":
             num_str += self._advance()
@@ -296,7 +301,6 @@ class Lexer:
                 "]": TokenType.RBRACKET,
                 ":": TokenType.COLON,
                 ",": TokenType.COMMA,
-                ".": TokenType.DOT,
                 "(": TokenType.LPAREN,
                 ")": TokenType.RPAREN,
                 "=": TokenType.EQUALS,
@@ -305,6 +309,15 @@ class Lexer:
                 "/": TokenType.SLASH,
                 "%": TokenType.PERCENT,
             }
+
+            # Check for .. (range) before checking single_char_tokens
+            if self.pos + 1 < len(self.source):
+                two = self.source[self.pos : self.pos + 2]
+                if two == "..":
+                    self._advance()
+                    self._advance()
+                    result.append(Token(TokenType.DOT_DOT, "..", start_line, start_col))
+                    continue
 
             if ch == "-":
                 self._advance()
@@ -348,6 +361,10 @@ class Lexer:
             if ch in single_char_tokens:
                 self._advance()
                 result.append(Token(single_char_tokens[ch], ch, start_line, start_col))
+                continue
+            if ch == ".":
+                self._advance()
+                result.append(Token(TokenType.DOT, ".", start_line, start_col))
                 continue
 
             raise LexerError(f"Unexpected character: {ch}", self.line, self.column)

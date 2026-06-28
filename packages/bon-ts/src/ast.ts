@@ -116,8 +116,14 @@ export interface ArrayLit {
 
 export interface ObjectLit {
   kind: "ObjectLit";
-  pairs: Record<string, Expression>;
+  pairs: ObjectPair[];
+  conditions?: ConditionalBlock[];
   pos: Position;
+}
+
+export interface ObjectPair {
+  key: Expression;
+  value: Expression;
 }
 
 export interface ImportStmt {
@@ -148,11 +154,27 @@ export interface IfExpr {
   pos: Position;
 }
 
+export interface ConditionalBlock {
+  kind: "ConditionalBlock";
+  cond: Expression;
+  thenBody: ObjectPair[];
+  elseBody: ObjectPair[] | null;
+  pos: Position;
+}
+
 export interface ForLoop {
   kind: "ForLoop";
   varName: string;
+  varName2: string | null;  // Second variable for key-value pair traversal
   iterable: Expression;
   body: Expression;
+  pos: Position;
+}
+
+export interface Range {
+  kind: "Range";
+  start: number;
+  end: number;
   pos: Position;
 }
 
@@ -174,7 +196,9 @@ export type Expression =
   | ReturnStmt
   | Param
   | IfExpr
-  | ForLoop;
+  | ConditionalBlock
+  | ForLoop
+  | Range;
 
 export interface Program {
   imports: ImportStmt[];

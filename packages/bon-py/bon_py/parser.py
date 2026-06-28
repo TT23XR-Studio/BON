@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from .ast_nodes import (
-    ArrayLit, BinaryOp, ClassDef, ClassInstance, Expression, FuncCall,
+    ArrayLit, BinaryOp, ClassDef, ClassInstance, ConditionalBlock, Expression, FuncCall,
     FuncDef, Identifier, ImportStmt, Literal, MethodCall, MethodDef,
     ObjectLit, Param, Position, Program, PropertyAccess, ReturnStmt, TemplateDef,
-    TemplateRef, UnaryOp, VariableAssign, IfExpr, ForLoop,
+    TemplateRef, UnaryOp, VariableAssign, IfExpr, ForLoop, Range,
 )
 from .lexer import Lexer, Token, TokenType
 
@@ -55,7 +55,7 @@ class Parser:
         return Position(tok.line, tok.column)
 
     def _parse_obj_key(self) -> str:
-        """Parse an object key (ident, string, or $param)."""
+        """Parse an object key as string (ident, string, or $param)."""
         tok = self._current()
         if tok.type == TokenType.STRING:
             self._advance()
@@ -66,6 +66,19 @@ class Parser:
             self._advance()
             return f"__param_key__{param_name}"
         return self._expect(TokenType.IDENT).value
+
+    def _parse_obj_key_expr(self) -> Any:
+        """Parse an object key as expression node (string, param, ident, or computed)."""
+        tok = self._current()
+        if tok.type == TokenType.STRING:
+            pos = self._pos()
+            self._advance()
+            return Literal(str(tok.value), pos)
+        if tok.type == TokenType.PARAM:
+            pos = self._pos()
+            self._advance()
+            return Param(tok.value, pos)
+        return Identifier(self._expect(TokenType.IDENT).value, self._pos())
 
     # ── Top-level ────────────────────────────────────────────
 
@@ -389,16 +402,57 @@ class Parser:
 
         return IfExpr(cond, then_expr, else_expr, pos)
 
+    def _parse_conditional_block(self) -> ConditionalBlock:
+        """Parse conditional block in object context: if (cond) { key: val, ... } else { ... }"""
+        pos = self._pos()
+        self._expect(TokenType.IF)
+        cond = self._parse_expression()
+        self._expect(TokenType.LBRACE)
+        then_body: list[tuple[Any, Any]] = []
+        while self._current().type != TokenType.RBRACE:
+            key = self._parse_obj_key_expr()
+            self._expect(TokenType.COLON)
+            val = self._parse_expression()
+            then_body.append((key, val))
+            self._match(TokenType.COMMA)
+        self._expect(TokenType.RBRACE)
+
+        else_body = None
+        if self._current().type == TokenType.ELSE:
+            self._advance()
+            self._expect(TokenType.LBRACE)
+            else_body = []
+            while self._current().type != TokenType.RBRACE:
+                key = self._parse_obj_key_expr()
+                self._expect(TokenType.COLON)
+                val = self._parse_expression()
+                else_body.append((key, val))
+                self._match(TokenType.COMMA)
+            self._expect(TokenType.RBRACE)
+
+        return ConditionalBlock(cond, then_body, else_body, pos)
+
     def _parse_for_loop(self) -> ForLoop:
         pos = self._pos()
         self._expect(TokenType.FOR)
         var_name = self._expect(TokenType.IDENT).value
+        var_name2 = None
+        if self._match(TokenType.COMMA):
+            var_name2 = self._expect(TokenType.IDENT).value
         self._expect(TokenType.IN)
-        iterable = self._parse_expression()
-        self._expect(TokenType.LBRACE)
+        iterable = self._parse_range_or_expression()
+        # Body is a single expression (may be object literal or just expression)
         body = self._parse_expression()
-        self._expect(TokenType.RBRACE)
-        return ForLoop(var_name, iterable, body, pos)
+        return ForLoop(var_name, iterable, body, var_name2, pos)
+
+    def _parse_range_or_expression(self) -> Expression:
+        """Parse either a range (num..num) or a regular expression."""
+        if self._current().type == TokenType.NUMBER and self._peek(1).type == TokenType.DOT_DOT:
+            start_tok = self._advance()
+            self._advance()
+            end_tok = self._expect(TokenType.NUMBER)
+            return Range(int(start_tok.value), int(end_tok.value), Position(start_tok.line, start_tok.column))
+        return self._parse_expression()
 
     def _parse_anonymous_fn(self) -> FuncDef:
         pos = self._pos()
@@ -450,33 +504,36 @@ class Parser:
     def _parse_object_literal(self) -> ObjectLit:
         pos = self._pos()
         self._expect(TokenType.LBRACE)
-        pairs: dict[str, Expression] = {}
+        pairs: list[tuple[Any, Any]] = []
+        conditions: list[ConditionalBlock] | None = None
 
         while self._current().type != TokenType.RBRACE:
-            # Handle bare template reference as value
-            if self._current().type == TokenType.TEMPLATE_OPEN:
-                val = self._parse_expression()
-                if isinstance(val, TemplateRef):
-                    pairs[val.name] = val
-                else:
-                    pairs["_"] = val
-            elif self._current().type == TokenType.IDENT and self._peek(1).type != TokenType.COLON:
-                # Bare identifier (not followed by colon) - could be template ref
-                val = self._parse_expression()
-                if isinstance(val, TemplateRef):
-                    pairs[val.name] = val
-                else:
-                    pairs["_"] = val
+            if self._current().type == TokenType.IF:
+                block = self._parse_conditional_block()
+                if conditions is None:
+                    conditions = []
+                conditions.append(block)
             else:
-                key = self._parse_obj_key()
-                self._expect(TokenType.COLON)
-                val = self._parse_expression()
-                pairs[key] = val
+                # Try parsing as a key-value pair (expression followed by colon)
+                saved_pos = self.pos
+                key = self._parse_expression()
+                if self._current().type == TokenType.COLON:
+                    self._advance()
+                    val = self._parse_expression()
+                    pairs.append((key, val))
+                else:
+                    # Not followed by colon, backtrack and treat as bare value
+                    self.pos = saved_pos
+                    val = self._parse_expression()
+                    if isinstance(val, TemplateRef):
+                        pairs.append((Literal(val.name, val.pos), Literal(True, val.pos)))
+                    else:
+                        pairs.append((Literal("_", pos), val))
 
             self._match(TokenType.COMMA)
 
         self._expect(TokenType.RBRACE)
-        return ObjectLit(pairs, pos)
+        return ObjectLit(pairs, conditions, pos)
 
     def _parse_func_call_name(self, name: str, pos: Position) -> FuncCall:
         """Parse a function call when name is already consumed."""

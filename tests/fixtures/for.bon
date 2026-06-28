@@ -1,1 +1,45 @@
-{"outputs": for x in [1, 2, 3] { x * 2 }}
+# ── For: Array iteration ──────────────────────────────────────
+
+{"array_basic": for x in [1, 2, 3] { x * 2 }}
+
+# ── For: Range iteration ──────────────────────────────────────
+
+{"range_basic": for i in 0..3 { std.to_string(i) }}
+
+{"range_replicas": for i in 0..3 { "svc-" + std.to_string(i) }}
+
+# ── For: Single var over object (returns array of values) ─────
+
+{"object_values": for v in {"a": 1, "b": 2, "c": 3} { v }}
+
+# ── For: Key-value over object (returns merged object) ────────
+
+{"object_kv": for k, v in {"alice": 30, "bob": 25} { k + "_age": v }}
+
+# ── For: Computed keys in object body ─────────────────────────
+
+{"reports": for name, score in {"alice": 10, "bob": 20} {
+    name + "_report": "Score is " + std.to_string(score)
+}}
+
+# ── For: Object with else in body ─────────────────────────────
+
+{"object_else": for k, v in {"x": 1, "y": 2} { if (v > 1) { k: "big" } else { k: "small" } }}
+
+# ── For: Nested for ──────────────────────────────────────────
+
+{"nested": for i in 0..3 { for j in 0..2 { std.to_string(i) + "-" + std.to_string(j) }}}
+
+# ── For: For with variable reference ──────────────────────────
+
+base_port = 8080
+{"ports": for i in 0..3 { base_port + i }}
+
+# ── For: For inside expression (as value) ─────────────────────
+
+{
+    "computed": for x in [10, 20, 30] {
+        "val": x,
+        "half": x / 2
+    }
+}

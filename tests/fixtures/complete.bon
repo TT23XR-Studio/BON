@@ -51,7 +51,82 @@ class Rectangle {
     "perimeter": (self.width + self.height) * 2
 }
 
-# ── Standard library ────────────────────────────────────────
+# ── Compile-time params ─────────────────────────────────────
+
+{
+    "env": $env,
+    "feature_enabled": $feature,
+    "tag": $version
+}
+
+# ── If/else in expression context ───────────────────────────
+
+{"replicas": if ($env == "prod") { 5 } else { 1 }}
+
+{"log_level": if ($env == "prod") { "ERROR" } else if ($env == "staging") { "WARN" } else { "DEBUG" }}
+
+# ── If/else in object block context ─────────────────────────
+
+{
+    "name": "app",
+    if ($env == "dev") {
+        "debug": true,
+        "verbose": true
+    },
+    if ($feature) {
+        "experimental": "enabled"
+    } else {
+        "experimental": "disabled"
+    }
+}
+
+# ── For: Array iteration ────────────────────────────────────
+
+{"arr_double": for x in [1, 2, 3] { x * 2 }}
+
+# ── For: Range iteration ────────────────────────────────────
+
+{"subnets": for i in 0..3 { "10.0." + std.to_string(i) + ".0/24" }}
+
+# ── For: Single var over object ─────────────────────────────
+
+{"vals": for v in {"a": 1, "b": 2, "c": 3} { v }}
+
+# ── For: Key-value over object ──────────────────────────────
+
+{"ages": for name, age in {"alice": 30, "bob": 25} { name: age }}
+
+# ── For: Computed keys ──────────────────────────────────────
+
+{"reports": for name, score in {"alice": 10, "bob": 20} {
+    name + "_report": "Score is " + std.to_string(score)
+}}
+
+# ── For with if/else ────────────────────────────────────────
+
+{"filtered": for x in [1, 2, 3, 4, 5] if (x > 3) { x } else { 10 - x }}
+
+# ── For with if (no else) ───────────────────────────────────
+
+{"evens": for x in [1, 2, 3, 4] if (x % 2 == 0) { x }}
+
+# ── For over object with if/else ────────────────────────────
+
+{"env_configs": for name in ["dev", "prod", "staging"] {
+    name + "_config": { "replicas": if ($env == "prod") { 5 } else if ($env == "staging") { 2 } else { 1 } }
+}}
+
+# ── Mix: Class with params and conditionals ─────────────────
+
+class Service {
+    "name": $service_name,
+    "replicas": if ($env == "prod") { 5 } else { 1 },
+    "tags": for i in 0..3 { "tag-" + std.to_string(i) }
+}
+
+{"svc": Service {}}
+
+# ── Main verification object ────────────────────────────────
 
 {
     # JSON compatible
@@ -108,5 +183,18 @@ class Rectangle {
     "arr": [1, "two", true, null],
 
     # Nested objects
-    "nested": { "a": { "b": { "c": 42 } } }
+    "nested": { "a": { "b": { "c": 42 } } },
+
+    # Param results (injected by test)
+    "param_env": $env,
+    "param_feature": $feature,
+
+    # For results
+    "for_double": for x in [1, 2, 3] { x * 2 },
+    "for_subnets": for i in 0..3 { "10.0." + std.to_string(i) + ".0/24" },
+    "for_filtered": for x in [1, 2, 3, 4, 5] if (x > 3) { x } else { 10 - x },
+    "for_evens": for x in [1, 2, 3, 4] if (x % 2 == 0) { x },
+
+    # If results
+    "if_replicas": if ($env == "prod") { 5 } else { 1 }
 }

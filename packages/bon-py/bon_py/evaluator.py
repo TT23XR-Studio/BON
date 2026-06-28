@@ -8,14 +8,17 @@ from copy import deepcopy
 from typing import Any, Callable
 
 from .ast_nodes import (
-    ArrayLit, BinaryOp, ClassDef, ClassInstance, Expression, FuncCall,
+    ArrayLit, BinaryOp, ClassDef, ClassInstance, ConditionalBlock, Expression, FuncCall,
     FuncDef, Identifier, ImportStmt, Literal, MethodCall, MethodDef,
     ObjectLit, Param, Position, Program, PropertyAccess, ReturnStmt, TemplateDef,
-    TemplateRef, UnaryOp, VariableAssign, IfExpr, ForLoop,
+    TemplateRef, UnaryOp, VariableAssign, IfExpr, ForLoop, Range,
 )
 from .lexer import Lexer
 from .parser import Parser
 from .stdlib import BONRuntimeError, STD_LIB, set_call_func
+
+
+_PRUNED = object()  # Sentinel for pruned if-expressions
 
 
 class EvalError(Exception):
@@ -46,6 +49,10 @@ class Evaluator:
         # Wire up anonymous function call helper
         set_call_func(self._call_anon_func)
 
+        # Context tracking for if-expression pruning
+        # Stack: True = expression context (else required), False = object block context (pruning allowed)
+        self._in_expr_context: list[bool] = [True]
+
     def _call_anon_func(self, fn: Any, args: list[Any]) -> Any:
         """Call an anonymous function (FuncDef) with given args."""
         if isinstance(fn, dict) and "__bon_func__" in fn:
@@ -56,6 +63,7 @@ class Evaluator:
 
     def evaluate(self, program: Program) -> Any:
         """Evaluate a full Program AST and return JSON-serializable output."""
+        # Phase 0: Parameter injection (done by __init__ params)
         # Phase 1: Import resolution
         for imp in program.imports:
             self._resolve_import(imp)
@@ -68,10 +76,14 @@ class Evaluator:
         for name, va in program.variables.items():
             self.variables[name] = self._eval(va.value)
 
-        # Phase 2: Template expansion happens during evaluation
-        # Phase 3: Class instantiation and constant folding happen during evaluation
+        # Phase 2: Symbol resolution (E009 handled by _resolve_param on demand)
+        # Phase 3: Control flow expansion (if pruning, for expansion - happens during _eval)
+        # Phase 4: Template expansion (happens during _eval)
+        # Phase 5: Constant folding (happens during _eval)
 
         # Evaluate body
+        self._in_expr_context.clear()
+        self._in_expr_context.append(True)  # Top-level is expression context
         results = []
         for expr in program.body:
             results.append(self._eval(expr))
@@ -137,6 +149,15 @@ class Evaluator:
         if isinstance(node, ForLoop):
             return self._eval_for_loop(node)
 
+        if isinstance(node, ConditionalBlock):
+            # Standalone conditional block evaluation (shouldn't normally happen)
+            result: dict[str, Any] = {}
+            self._eval_conditional_block_into(node, result)
+            return result if result else _PRUNED
+
+        if isinstance(node, Range):
+            return list(range(node.start, node.end))
+
         if isinstance(node, PropertyAccess):
             return self._eval_property_access(node)
 
@@ -145,16 +166,22 @@ class Evaluator:
 
         if isinstance(node, ObjectLit):
             result = {}
-            for key, val in node.pairs.items():
-                # Handle $param keys
-                if key.startswith("__param_key__"):
-                    param_name = key[len("__param_key__"):]
-                    actual_key = self._resolve_param(param_name, node.pos)
-                    if not isinstance(actual_key, str):
-                        raise EvalError(f"Object key from $ variable must be string, got {type(actual_key).__name__}", "E011", node.pos)
-                    result[actual_key] = self._eval(val)
-                else:
-                    result[key] = self._eval(val)
+            self._in_expr_context.append(False)
+            try:
+                # Evaluate conditional blocks first
+                if node.conditions:
+                    for block in node.conditions:
+                        self._eval_conditional_block_into(block, result)
+                # Evaluate key-value pairs
+                for key_expr, val_expr in node.pairs:
+                    key = self._eval_obj_key(key_expr, node.pos)
+                    if key is None:
+                        continue
+                    evaluated = self._eval(val_expr)
+                    if evaluated is not _PRUNED:
+                        result[key] = evaluated
+            finally:
+                self._in_expr_context.pop()
             return result
 
         if isinstance(node, ReturnStmt):
@@ -193,23 +220,64 @@ class Evaluator:
             raise EvalError(f"Missing parameter: ${name}. Available: ${available}", "E009", pos)
         return self.params[name]
 
+    def _eval_obj_key(self, key_expr: Any, obj_pos: Position) -> str | None:
+        """Evaluate an object key expression to a string. Returns None if pruned."""
+        if isinstance(key_expr, Param):
+            actual_key = self._resolve_param(key_expr.name, key_expr.pos)
+            if not isinstance(actual_key, str):
+                raise EvalError(f"Object key from $ variable must be string, got {type(actual_key).__name__}", "E011", obj_pos)
+            return actual_key
+        if isinstance(key_expr, Literal):
+            return str(key_expr.value)
+        if isinstance(key_expr, Identifier):
+            return key_expr.name
+        # Computed key: evaluate the expression
+        evaluated = self._eval(key_expr)
+        if evaluated is _PRUNED:
+            return None
+        return str(evaluated)
+
+    def _eval_conditional_block_into(self, block: ConditionalBlock, result: dict[str, Any]) -> None:
+        """Evaluate a conditional block and merge its entries into result."""
+        cond = self._eval(block.cond)
+        entries = block.then_body if cond else block.else_body
+        if entries is None:
+            return
+        for key_expr, val_expr in entries:
+            key = self._eval_obj_key(key_expr, block.pos)
+            if key is None:
+                continue
+            evaluated = self._eval(val_expr)
+            if evaluated is not _PRUNED:
+                result[key] = evaluated
+
     def _eval_if_expr(self, node: IfExpr) -> Any:
         """Evaluate if expression."""
         cond = self._eval(node.cond)
-        if not isinstance(cond, bool):
-            raise EvalError(f"if condition must be boolean, got {type(cond).__name__}", "E011", node.pos)
 
         if cond:
             return self._eval(node.then_expr)
         elif node.else_expr is not None:
             return self._eval(node.else_expr)
-        return None
+        # No else branch and condition is false
+        if self._in_expr_context[-1]:
+            raise EvalError("if expression without else must be inside an object block, got expression context", "E011", node.pos)
+        # Object block context - return pruned sentinel
+        return _PRUNED
 
     def _eval_for_loop(self, node: ForLoop) -> Any:
         """Evaluate for loop and expand."""
         iterable_val = self._eval(node.iterable)
+
         if not isinstance(iterable_val, (list, dict)):
-            raise EvalError(f"for loop requires iterable (array or object), got {type(iterable_val).__name__}", "E011", node.pos)
+            raise EvalError(f"for loop requires iterable (array, object, or range), got {type(iterable_val).__name__}", "E011", node.pos)
+
+        if len(iterable_val) > self.MAX_ITERATIONS:
+            raise EvalError(
+                f"For loop iteration count exceeds maximum ({len(iterable_val)} > {self.MAX_ITERATIONS}). "
+                f"Consider using a smaller iterable or std.map.",
+                "E010", node.pos
+            )
 
         if isinstance(iterable_val, list):
             results = []
@@ -218,18 +286,35 @@ class Evaluator:
                 self.variables[node.var_name] = item
                 try:
                     result = self._eval(node.body)
+                    if result is _PRUNED:
+                        continue
+                    # If body is an object with single "_" key, extract the value
+                    if isinstance(result, dict) and "_" in result and len(result) == 1:
+                        result = result["_"]
                     results.append(result)
                 finally:
                     self.variables = old_vars
             return results
         else:
-            results = []
+            results = {}
             for key, value in iterable_val.items():
                 old_vars = dict(self.variables)
-                self.variables[node.var_name] = value
+                if node.var_name2 is not None:
+                    self.variables[node.var_name] = key
+                    self.variables[node.var_name2] = value
+                else:
+                    self.variables[node.var_name] = value
                 try:
                     result = self._eval(node.body)
-                    results.append(result)
+                    if result is _PRUNED:
+                        continue
+                    # When iterating objects, body should return an object to merge
+                    if isinstance(result, dict):
+                        for k, v in result.items():
+                            results[k] = v
+                    else:
+                        # Single value - use original key
+                        results[key] = result
                 finally:
                     self.variables = old_vars
             return results

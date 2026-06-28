@@ -7,7 +7,7 @@ export type TokenType =
   | "IDENT" | "CLASS" | "EXTENDS" | "FN" | "RETURN" | "IMPORT" | "AS"
   | "IF" | "ELSE" | "FOR" | "IN"
   | "LBRACE" | "RBRACE" | "LBRACKET" | "RBRACKET"
-  | "COLON" | "COMMA" | "DOT" | "LPAREN" | "RPAREN"
+  | "COLON" | "COMMA" | "DOT" | "DOT_DOT" | "LPAREN" | "RPAREN"
   | "DASH" | "EQUALS"
   | "PLUS" | "MINUS" | "STAR" | "SLASH" | "PERCENT"
   | "GT" | "LT" | "GTE" | "LTE" | "EQ_EQ" | "BANG_EQ"
@@ -150,10 +150,15 @@ export class Lexer {
     }
 
     if (this.pos < this.source.length && this.source[this.pos] === ".") {
-      hasDot = true;
-      numStr += this.advance();
-      while (this.pos < this.source.length && this.source[this.pos] >= "0" && this.source[this.pos] <= "9") {
+      // Check for .. (range), don't consume the dot
+      if (this.pos + 1 < this.source.length && this.source[this.pos + 1] === ".") {
+        // This is a range operator, not a decimal point
+      } else {
+        hasDot = true;
         numStr += this.advance();
+        while (this.pos < this.source.length && this.source[this.pos] >= "0" && this.source[this.pos] <= "9") {
+          numStr += this.advance();
+        }
       }
     }
 
@@ -288,18 +293,15 @@ export class Lexer {
         continue;
       }
 
-      // Single char tokens
-      if (ch in singleCharTokens) {
-        const line = this.line;
-        const col = this.column;
-        this.advance();
-        result.push({ type: singleCharTokens[ch], value: ch, line, column: col });
-        continue;
-      }
-
-      // Two-character operators
+      // Two-character operators (must check before single char)
       if (this.pos + 1 < this.source.length) {
         const two = this.source.slice(this.pos, this.pos + 2);
+        if (two === "..") {
+          this.advance();
+          this.advance();
+          result.push({ type: "DOT_DOT", value: "..", line: this.line, column: this.column - 2 });
+          continue;
+        }
         if (two === ">=") {
           this.advance();
           this.advance();
@@ -324,6 +326,22 @@ export class Lexer {
           result.push({ type: "BANG_EQ", value: "!=", line: this.line, column: this.column - 2 });
           continue;
         }
+      }
+
+      // Single char tokens (excluding '.' which is handled below)
+      if (ch in singleCharTokens && ch !== ".") {
+        const line = this.line;
+        const col = this.column;
+        this.advance();
+        result.push({ type: singleCharTokens[ch], value: ch, line, column: col });
+        continue;
+      }
+
+      // Single dot (not .. range)
+      if (ch === ".") {
+        this.advance();
+        result.push({ type: "DOT", value: ".", line: this.line, column: this.column - 1 });
+        continue;
       }
 
       // Single-character comparison operators

@@ -80,12 +80,20 @@ console.log("\n=== 8. 批量处理多个文件 ===")
 for (const bon_file of fs.readdirSync(path.join(PROJECT_ROOT, "tests", "fixtures"))) {
     try {
         if (!bon_file.endsWith(".bon")) continue;
-        // Run if-var.bon twice with different params
         if (bon_file === "if-var.bon") {
             const r1 = load(String(path.join(PROJECT_ROOT, "tests", "fixtures", bon_file)), { env: "test", debug: true });
             const r2 = load(String(path.join(PROJECT_ROOT, "tests", "fixtures", bon_file)), { env: "test", debug: false });
+            const r3 = load(String(path.join(PROJECT_ROOT, "tests", "fixtures", bon_file)), { env: "test", debug: null });
             console.log(`  ${bon_file} 1: ${JSON.stringify(r1, null, 2)}`);
             console.log(`  ${bon_file} 2: ${JSON.stringify(r2, null, 2)}`);
+            console.log(`  ${bon_file} 3: ${JSON.stringify(r3, null, 2)}`);
+        } else if (bon_file === "complete.bon") {
+            const r1 = load(String(path.join(PROJECT_ROOT, "tests", "fixtures", bon_file)), { env: "test", debug: "Emmm", version: "1.0", service_name: "my-service" });
+            const r2 = load(String(path.join(PROJECT_ROOT, "tests", "fixtures", bon_file)), { env: "test", debug: null, version: "1.0", service_name: "my-service" });
+            const r3 = load(String(path.join(PROJECT_ROOT, "tests", "fixtures", bon_file)), { env: "test", debug: true, version: "1.0", service_name: "my-service" });
+            console.log(`  ${bon_file} 1: ${JSON.stringify(r1, null, 2)}`);
+            console.log(`  ${bon_file} 2: ${JSON.stringify(r2, null, 2)}`);
+            console.log(`  ${bon_file} 3: ${JSON.stringify(r3, null, 2)}`);
         } else {
             const result = load(String(path.join(PROJECT_ROOT, "tests", "fixtures", bon_file)));
             const preview = JSON.stringify(result, null, 2)

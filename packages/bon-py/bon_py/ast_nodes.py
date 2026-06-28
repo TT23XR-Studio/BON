@@ -121,7 +121,8 @@ class ArrayLit:
 
 @dataclass
 class ObjectLit:
-    pairs: dict[str, Any]
+    pairs: list[tuple[Any, Any]]  # (key_expr, value_expr)
+    conditions: list[ConditionalBlock] | None = None
     pos: Position = field(default_factory=lambda: Position(0, 0))
 
 
@@ -154,10 +155,26 @@ class IfExpr:
 
 
 @dataclass
+class ConditionalBlock:
+    cond: Any
+    then_body: list[tuple[Any, Any]]  # (key_expr, value_expr)
+    else_body: list[tuple[Any, Any]] | None = None
+    pos: Position = field(default_factory=lambda: Position(0, 0))
+
+
+@dataclass
 class ForLoop:
     var_name: str
     iterable: Any
     body: Any
+    var_name2: str | None = None  # Second variable for key-value pair traversal
+    pos: Position = field(default_factory=lambda: Position(0, 0))
+
+
+@dataclass
+class Range:
+    start: int
+    end: int
     pos: Position = field(default_factory=lambda: Position(0, 0))
 
 
@@ -176,5 +193,6 @@ class Program:
 Expression = (
     Literal | Identifier | TemplateRef | ClassInstance | MethodCall |
     BinaryOp | UnaryOp | PropertyAccess | FuncCall | FuncDef |
-    ArrayLit | ObjectLit | ReturnStmt | Param | IfExpr | ForLoop
+    ArrayLit | ObjectLit | ReturnStmt | Param | IfExpr | ForLoop | Range |
+    ConditionalBlock
 )
