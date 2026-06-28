@@ -97,8 +97,13 @@ export interface ArrayLit {
 }
 export interface ObjectLit {
     kind: "ObjectLit";
-    pairs: Record<string, Expression>;
+    pairs: ObjectPair[];
+    conditions?: ConditionalBlock[];
     pos: Position;
+}
+export interface ObjectPair {
+    key: Expression;
+    value: Expression;
 }
 export interface ImportStmt {
     kind: "ImportStmt";
@@ -124,14 +129,28 @@ export interface IfExpr {
     elseExpr: Expression | null;
     pos: Position;
 }
+export interface ConditionalBlock {
+    kind: "ConditionalBlock";
+    cond: Expression;
+    thenBody: ObjectPair[];
+    elseBody: ObjectPair[] | null;
+    pos: Position;
+}
 export interface ForLoop {
     kind: "ForLoop";
     varName: string;
+    varName2: string | null;
     iterable: Expression;
     body: Expression;
     pos: Position;
 }
-export type Expression = Literal | Identifier | TemplateRef | ClassInstance | MethodCall | BinaryOp | UnaryOp | PropertyAccess | FuncCall | FuncDef | ArrayLit | ObjectLit | ReturnStmt | Param | IfExpr | ForLoop;
+export interface Range {
+    kind: "Range";
+    start: number;
+    end: number;
+    pos: Position;
+}
+export type Expression = Literal | Identifier | TemplateRef | ClassInstance | MethodCall | BinaryOp | UnaryOp | PropertyAccess | FuncCall | FuncDef | ArrayLit | ObjectLit | ReturnStmt | Param | IfExpr | ConditionalBlock | ForLoop | Range;
 export interface Program {
     imports: ImportStmt[];
     templates: Record<string, TemplateDef>;

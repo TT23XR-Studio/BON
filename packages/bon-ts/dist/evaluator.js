@@ -17,6 +17,7 @@ export class EvalError extends Error {
         this.name = "EvalError";
     }
 }
+const PRUNED = Symbol("PRUNED"); // Sentinel for pruned if-expressions
 export class Evaluator {
     baseDir;
     params;
@@ -26,10 +27,28 @@ export class Evaluator {
     importStack = [];
     callFn;
     MAX_ITERATIONS = 10000;
+    // Context tracking for if-expression pruning
+    // Top = true: expression context (else required), false: object block context (pruning allowed)
+    inExprContext = [true];
     constructor(baseDir = ".", params = {}) {
         this.baseDir = baseDir;
         this.params = params;
         this.callFn = this.createFnCaller();
+    }
+    toBool(value) {
+        if (typeof value === "boolean")
+            return value;
+        if (value === null)
+            return false;
+        if (typeof value === "number")
+            return value !== 0;
+        if (typeof value === "string")
+            return value.length > 0;
+        if (Array.isArray(value))
+            return value.length > 0;
+        if (typeof value === "object")
+            return Object.keys(value).length > 0;
+        return true;
     }
     createFnCaller() {
         return (fn, args) => {
@@ -44,6 +63,7 @@ export class Evaluator {
         throw new EvalError(`Cannot call non-function: ${typeof fn}`, "E007");
     }
     evaluate(program) {
+        // Phase 0: Parameter injection (done by constructor params)
         // Phase 1: Import resolution
         for (const imp of program.imports) {
             this.resolveImport(imp);
@@ -58,7 +78,12 @@ export class Evaluator {
         for (const [name, va] of Object.entries(program.variables)) {
             this.variables[name] = this.eval(va.value);
         }
+        // Phase 2: Symbol resolution (E009 handled by resolveParam on demand)
+        // Phase 3: Control flow expansion (happens during eval)
+        // Phase 4: Template expansion (happens during eval)
+        // Phase 5: Constant folding (happens during eval)
         // Evaluate body
+        this.inExprContext = [true]; // Top-level is expression context
         const results = [];
         for (const expr of program.body) {
             results.push(this.eval(expr));
@@ -102,26 +127,52 @@ export class Evaluator {
             case "ObjectLit": {
                 const obj = {};
                 const objNode = n;
-                for (const [key, val] of Object.entries(objNode.pairs)) {
-                    // Handle $param keys
-                    if (key.startsWith("__param_key__")) {
-                        const paramName = key.slice("__param_key__".length);
-                        const actualKey = this.resolveParam(paramName, objNode.pos);
-                        if (typeof actualKey !== "string") {
-                            throw new EvalError(`Object key from $ variable must be string, got ${typeof actualKey}`, "E011", objNode.pos);
+                this.inExprContext.push(false);
+                try {
+                    // Evaluate conditional blocks first
+                    if (objNode.conditions) {
+                        for (const block of objNode.conditions) {
+                            this.evalConditionalBlockInto(block, obj);
                         }
-                        obj[actualKey] = this.eval(val);
                     }
-                    else {
-                        obj[key] = this.eval(val);
+                    // Evaluate key-value pairs
+                    for (const pair of objNode.pairs) {
+                        // Handle TemplateRef key (bare template reference shorthand)
+                        if (pair.key.kind === "TemplateRef") {
+                            const tmplKey = pair.key.name;
+                            const evaluated = this.expandTemplate(tmplKey, pair.key.pos);
+                            if (evaluated !== PRUNED) {
+                                obj[tmplKey] = evaluated;
+                            }
+                            continue;
+                        }
+                        const keyStr = this.evalObjKey(pair.key);
+                        if (keyStr === null)
+                            continue; // PRUNED
+                        const evaluated = this.eval(pair.value);
+                        if (evaluated !== PRUNED) {
+                            obj[keyStr] = evaluated;
+                        }
                     }
                 }
+                finally {
+                    this.inExprContext.pop();
+                }
                 return obj;
+            }
+            case "Range": {
+                const r = n;
+                return Array.from({ length: r.end - r.start }, (_, i) => i + r.start);
             }
             case "IfExpr":
                 return this.evalIfExpr(n);
             case "ForLoop":
                 return this.evalForLoop(n);
+            case "ConditionalBlock": {
+                const result = {};
+                this.evalConditionalBlockInto(n, result);
+                return Object.keys(result).length > 0 ? result : PRUNED;
+            }
             case "ReturnStmt":
                 return this.eval(n.value);
             case "VariableAssign": {
@@ -383,46 +434,141 @@ export class Evaluator {
         throw new EvalError(`Cannot access property on ${typeLabel(obj)}`, "E007", node.pos);
     }
     evalIfExpr(node) {
-        const cond = this.eval(node.cond);
-        if (typeof cond !== "boolean") {
-            throw new EvalError(`if condition must be boolean, got ${typeof cond}`, "E011", node.pos);
-        }
+        const cond = this.toBool(this.eval(node.cond));
         if (cond) {
             return this.eval(node.thenExpr);
         }
         else if (node.elseExpr !== null) {
             return this.eval(node.elseExpr);
         }
-        return null;
+        // No else branch and condition is false
+        if (this.inExprContext[this.inExprContext.length - 1]) {
+            throw new EvalError("if expression without else must be inside an object block, got expression context", "E011", node.pos);
+        }
+        // Object block context - return pruned sentinel
+        return PRUNED;
+    }
+    evalObjKey(keyExpr) {
+        if (keyExpr.kind === "Param") {
+            const key = this.resolveParam(keyExpr.name, keyExpr.pos);
+            if (typeof key !== "string") {
+                throw new EvalError(`Object key from $ variable must be string, got ${typeLabel(key)}`, "E011", keyExpr.pos);
+            }
+            return key;
+        }
+        if (keyExpr.kind === "Literal") {
+            return String(keyExpr.value);
+        }
+        if (keyExpr.kind === "Identifier") {
+            return keyExpr.name;
+        }
+        // Computed key: evaluate the expression
+        const evaluated = this.eval(keyExpr);
+        if (evaluated === PRUNED)
+            return null;
+        return String(evaluated);
+    }
+    evalConditionalBlockInto(block, result) {
+        const cond = this.toBool(this.eval(block.cond));
+        const entries = cond ? block.thenBody : block.elseBody;
+        if (!entries)
+            return;
+        for (const pair of entries) {
+            const key = this.evalObjKey(pair.key);
+            if (key === null)
+                continue;
+            const evaluated = this.eval(pair.value);
+            if (evaluated !== PRUNED) {
+                result[key] = evaluated;
+            }
+        }
     }
     evalForLoop(node) {
         const iterable = this.eval(node.iterable);
-        if (!Array.isArray(iterable) && (iterable === null || typeof iterable !== "object")) {
-            throw new EvalError(`for loop requires iterable (array or object), got ${typeLabel(iterable)}`, "E011", node.pos);
-        }
-        const results = [];
+        // Handle range (already expanded to array)
         if (Array.isArray(iterable)) {
+            if (iterable.length > this.MAX_ITERATIONS) {
+                throw new EvalError(`For loop iteration count exceeds maximum (${iterable.length} > ${this.MAX_ITERATIONS}). ` +
+                    `Consider using a smaller range or std.map.`, "E010", node.pos);
+            }
+            // varName2 is only for object iteration, not arrays
+            if (node.varName2 !== null) {
+                throw new EvalError(`For loop with two variables can only iterate over objects, got array`, "E011", node.pos);
+            }
+            const results = [];
             for (const item of iterable) {
                 const oldVars = { ...this.variables };
                 this.variables[node.varName] = item;
                 try {
-                    results.push(this.eval(node.body));
+                    let result = this.eval(node.body);
+                    if (result === PRUNED)
+                        continue;
+                    // If body is an object with single "_" key, extract the value
+                    if (result && typeof result === "object" && "_" in result && Object.keys(result).length === 1) {
+                        result = result["_"];
+                    }
+                    results.push(result);
                 }
                 finally {
                     this.variables = oldVars;
                 }
             }
+            return results;
         }
-        else {
-            for (const [_key, value] of Object.entries(iterable)) {
+        if (iterable === null || typeof iterable !== "object") {
+            throw new EvalError(`for loop requires iterable (array, object, or range), got ${typeLabel(iterable)}`, "E011", node.pos);
+        }
+        const iterableObj = iterable;
+        if (Object.keys(iterableObj).length > this.MAX_ITERATIONS) {
+            throw new EvalError(`For loop iteration count exceeds maximum (${Object.keys(iterableObj).length} > ${this.MAX_ITERATIONS}). ` +
+                `Consider using a smaller iterable or std.map.`, "E010", node.pos);
+        }
+        if (node.varName2 !== null) {
+            // Key-value pair mode: return object (merge body objects)
+            const resultObj = {};
+            for (const [key, value] of Object.entries(iterableObj)) {
                 const oldVars = { ...this.variables };
-                this.variables[node.varName] = value;
+                this.variables[node.varName] = key;
+                this.variables[node.varName2] = value;
                 try {
-                    results.push(this.eval(node.body));
+                    let result = this.eval(node.body);
+                    if (result === PRUNED)
+                        continue;
+                    // If body is an object with single "_" key, extract the value
+                    if (result && typeof result === "object" && "_" in result && Object.keys(result).length === 1) {
+                        result = result["_"];
+                    }
+                    // Merge into result object (last value wins for duplicate keys)
+                    if (result && typeof result === "object" && !Array.isArray(result)) {
+                        Object.assign(resultObj, result);
+                    }
                 }
                 finally {
                     this.variables = oldVars;
                 }
+            }
+            return resultObj;
+        }
+        // Single var over object returns array of values
+        const results = [];
+        for (const [key, value] of Object.entries(iterableObj)) {
+            const oldVars = { ...this.variables };
+            this.variables[node.varName] = value;
+            try {
+                const result = this.eval(node.body);
+                if (result === PRUNED)
+                    continue;
+                // If body is an object with single "_" key, extract the value
+                if (result && typeof result === "object" && "_" in result && Object.keys(result).length === 1) {
+                    results.push(result["_"]);
+                }
+                else {
+                    // Single value - push to array
+                    results.push(result);
+                }
+            }
+            finally {
+                this.variables = oldVars;
             }
         }
         return results;
@@ -465,6 +611,10 @@ export class Evaluator {
         }
     }
     sanitize(obj) {
+        // Handle pruned sentinel - return null for standalone context
+        if (obj === PRUNED) {
+            return null;
+        }
         if (obj && typeof obj === "object" && !Array.isArray(obj)) {
             const rec = obj;
             if ("__bonMethod__" in rec) {

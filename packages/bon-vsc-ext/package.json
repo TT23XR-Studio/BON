@@ -4,6 +4,7 @@
   "description": "Syntax highlighting, language support, and built-in library completions for BON files",
   "version": "1.0.0",
   "publisher": "TT23XR-Studio",
+  "type": "module",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.85.0"
@@ -11,7 +12,10 @@
   "categories": [
     "Programming Languages"
   ],
-  "repository": {"url": "https://github.com/TT23XR-Studio/BON", "directory": "/packages/bon-vsc-ext/"},
+  "repository": {
+    "url": "https://github.com/TT23XR-Studio/BON",
+    "directory": "/packages/bon-vsc-ext/"
+  },
   "keywords": [
     "bon",
     "json",
@@ -106,8 +110,9 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "pnpm run bundle",
     "compile": "tsc -p ./",
+    "bundle": "node esbuild.config.mjs",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"
@@ -118,6 +123,7 @@
   "devDependencies": {
     "@types/node": "^26.0.0",
     "@types/vscode": "^1.85.0",
+    "esbuild": "^0.28.1",
     "typescript": "^6.0.3"
   }
 }

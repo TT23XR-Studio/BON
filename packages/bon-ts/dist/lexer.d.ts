@@ -1,7 +1,7 @@
 /**
  * BON Lexer - Tokenizer for BON source code.
  */
-export type TokenType = "STRING" | "NUMBER" | "TRUE" | "FALSE" | "NULL" | "IDENT" | "CLASS" | "EXTENDS" | "FN" | "RETURN" | "IMPORT" | "AS" | "IF" | "ELSE" | "FOR" | "IN" | "LBRACE" | "RBRACE" | "LBRACKET" | "RBRACKET" | "COLON" | "COMMA" | "DOT" | "LPAREN" | "RPAREN" | "DASH" | "EQUALS" | "PLUS" | "MINUS" | "STAR" | "SLASH" | "PERCENT" | "GT" | "LT" | "GTE" | "LTE" | "EQ_EQ" | "BANG_EQ" | "TEMPLATE_OPEN" | "PARAM" | "EOF";
+export type TokenType = "STRING" | "NUMBER" | "TRUE" | "FALSE" | "NULL" | "IDENT" | "CLASS" | "EXTENDS" | "FN" | "RETURN" | "IMPORT" | "AS" | "IF" | "ELSE" | "FOR" | "IN" | "LBRACE" | "RBRACE" | "LBRACKET" | "RBRACKET" | "COLON" | "COMMA" | "DOT" | "DOT_DOT" | "LPAREN" | "RPAREN" | "DASH" | "EQUALS" | "PLUS" | "MINUS" | "STAR" | "SLASH" | "PERCENT" | "GT" | "LT" | "GTE" | "LTE" | "EQ_EQ" | "BANG_EQ" | "TEMPLATE_OPEN" | "PARAM" | "EOF";
 export interface Token {
     type: TokenType;
     value: string | number | boolean | null;

@@ -32,11 +32,12 @@ export declare class Parser {
     private parsePostfix;
     private parsePrimary;
     private parseIfExpr;
+    private parseConditionalBlock;
     private parseForLoop;
+    private parseRangeOrExpression;
     private parseAnonymousFn;
     private parseClassInstantiation;
     private parseArrayLiteral;
-    private parseObjectKey;
     private parseObjectLiteral;
     private parseFuncCallName;
 }

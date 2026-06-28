@@ -5,6 +5,20 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./lexer": {
+      "import": "./dist/lexer.js",
+      "types": "./dist/lexer.d.ts"
+    },
+    "./parser": {
+      "import": "./dist/parser.js",
+      "types": "./dist/parser.d.ts"
+    }
+  },
   "bin": {
     "bon": "dist/cli.js"
   },

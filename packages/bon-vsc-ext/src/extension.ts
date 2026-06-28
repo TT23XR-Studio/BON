@@ -1,7 +1,5 @@
 import * as vscode from "vscode";
-import { evaluate, load, EvalError } from "bon-ts";
-import { Lexer } from "bon-ts/lexer";
-import { Parser, ParseError } from "bon-ts/parser";
+import { evaluate, EvalError, Lexer, Parser, ParseError } from "bon-ts";
 
 let diagnosticCollection: vscode.DiagnosticCollection;
 
@@ -100,7 +98,7 @@ function updateDiagnostics(document: vscode.TextDocument): void {
     parser.parse();
   } catch (e: unknown) {
     if (e instanceof ParseError) {
-      const diag = errorToDiagnostic(e.message, e.pos);
+      const diag = errorToDiagnostic(e.message, e.token);
       if (diag) diagnostics.push(diag);
     } else if (e instanceof Error) {
       const diag = new vscode.Diagnostic(

@@ -16,7 +16,9 @@ export declare class Evaluator {
     private importStack;
     private callFn;
     MAX_ITERATIONS: number;
+    private inExprContext;
     constructor(baseDir?: string, params?: Record<string, unknown>);
+    private toBool;
     private createFnCaller;
     private callAnonymousFunc;
     evaluate(program: Program): unknown;
@@ -35,6 +37,8 @@ export declare class Evaluator {
     private evalUnaryOp;
     private evalPropertyAccess;
     private evalIfExpr;
+    private evalObjKey;
+    private evalConditionalBlockInto;
     private evalForLoop;
     private resolveImport;
     sanitize(obj: unknown): unknown;
